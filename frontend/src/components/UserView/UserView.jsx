@@ -82,8 +82,8 @@ const UserView = ({ userRole, onLogOut }) => {
                             <img src={logo} alt="Logo UEPA" className="h-10 object-contain" />
                             <div className="hidden sm:block w-px h-8 bg-white/20" />
                             <div className="hidden sm:block">
-                                <p className="text-xs font-bold text-blue-200 tracking-widest uppercase">SCA UEPA</p>
-                                <p className="text-[10px] text-blue-300/60">Sistema Cronos de Alocação</p>
+                                <p className="text-xs font-bold text-blue-200 tracking-widest uppercase">SIGRE</p>
+                                <p className="text-[10px] text-blue-300/60">Sistema Integrado de Gestão de Reservas Acadêmicas</p>
                             </div>
                         </div>
                         <div className="flex items-center gap-3">

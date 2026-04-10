@@ -31,7 +31,7 @@ const Footer = () => {
 
             <div className='pt-6 text-center md:text-left'>
                 <p className='text-sm text-gray-400'>
-                    &copy; {new Date().getFullYear()} SCA UEPA - Sistema Cronos de Alocação / UEPA Ananindeua.
+                    &copy; {new Date().getFullYear()} SIGRE - Sistema Integrado de Gestão de Reservas Acadêmicas / UEPA Ananindeua.
                     Todos os direitos reservados.
                 </p>
             </div>

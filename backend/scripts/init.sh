@@ -9,4 +9,9 @@ alembic stamp head
 if [ -f "./scripts/seed.py" ]; then
     python3 ./scripts/seed.py
 fi
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+RELOAD_FLAG=""
+if [ "$ENV" = "development" ]; then
+    RELOAD_FLAG="--reload"
+fi
+
+uvicorn app.main:app --host 0.0.0.0 --port 8000 $RELOAD_FLAG

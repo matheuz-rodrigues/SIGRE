@@ -228,8 +228,8 @@ const Login = ({ onLoginSuccess }) => {
                     <div className="flex items-center gap-3 mb-6">
                         <img src={logo} alt="Logo UEPA" className="h-10 object-contain" />
                         <div>
-                            <p className="text-xs font-bold tracking-widest uppercase" style={{ color: '#1c1aa3' }}>SCA UEPA</p>
-                            <p className="text-[10px] text-gray-400">Sistema Cronos de Alocação</p>
+                            <p className="text-xs font-bold tracking-widest uppercase" style={{ color: '#1c1aa3' }}>SIGRE</p>
+                            <p className="text-[10px] text-gray-400">Sistema Integrado de Gestão de Reservas Acadêmicas</p>
                         </div>
                     </div>
 
@@ -526,7 +526,7 @@ const Login = ({ onLoginSuccess }) => {
                         </h2>
 
                         <p className="text-sm text-blue-200 leading-relaxed mb-8">
-                            Sistema Cronos de Alocação — Campus XXII.
+                            Sistema Integrado de Gestão de Reservas Acadêmicas — Campus XXII.
                         </p>
                     </div>
                 </div>

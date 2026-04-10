@@ -3,7 +3,7 @@ import Header from './components/Header/Header'
 import { ScheduleProvider } from './components/Schedule/ScheduleContext'
 import ScheduleViiew from './components/Schedule/ScheduleViiew'
 import Footer from './components/Footer/Footer'
-import Login from './components/Login/login'
+import Login from './components/Login/Login'
 import Protection from './components/Protection/Protection'
 import UserView from './components/UserView/UserView'
 

@@ -1,0 +1,32 @@
+# IDEs
+.vscode/
+.idea/
+.DS_Store
+
+# Environment
+.env
+
+# Python (Backend)
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+.pytest_cache/
+.mypy_cache/
+backend/__pycache__/
+backend/.venv/
+
+# Node (Frontend)
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.eslintcache
+
+# Docker
+.docker_data/
+pg_data_*
+
+# Logs
+*.log
