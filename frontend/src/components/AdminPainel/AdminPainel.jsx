@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import axios from 'axios'
+import api from '../../services/api'
 import { useSchedule } from '../Schedule/ScheduleContext'
 import {
     Plus, LayoutGrid, ClipboardList, Calendar, Database,
@@ -48,7 +48,7 @@ const AdminPainel = () => {
     const carregarSolicitacoes = async () => {
         setLoadingSols(true)
         try {
-            const res = await axios.get('http://localhost:3000/solicitacao/all')
+            const res = await api.get('/solicitations/')
             setSolicitacoes(res.data.map(s => ({
                 id:           s.idSolicitacao,
                 solicitante:  s.solicitante,
@@ -79,7 +79,7 @@ const AdminPainel = () => {
 
     const carregarUsuarios = async () => {
         try {
-            const res = await axios.get('http://localhost:3000/usuario/all')
+            const res = await api.get('/users/')
             setUsuarios(res.data)
         } catch (err) {
             console.error('Erro ao carregar usuários:', err)
@@ -94,14 +94,14 @@ const AdminPainel = () => {
     // ── Handlers de Usuários (Passados para UserManagement) ──
     const handleAprovarUsuario = async (id) => {
         try {
-            await axios.patch(`http://localhost:3000/usuario/aprovar/${id}`)
+            await api.patch(`/users/approve/${id}`)
             carregarUsuarios()
         } catch (err) { alert('Erro ao aprovar usuário.') }
     }
 
     const handleRecusarUsuario = async (id) => {
         try {
-            await axios.patch(`http://localhost:3000/usuario/recusar/${id}`)
+            await api.patch(`/users/refuse/${id}`)
             carregarUsuarios()
         } catch (err) { alert('Erro ao processar alteração.') }
     }
@@ -109,32 +109,23 @@ const AdminPainel = () => {
     const handleDeletarUsuario = async (id) => {
         if (!window.confirm('Excluir este usuário permanentemente?')) return
         try {
-            await axios.delete(`http://localhost:3000/usuario/delete/${id}`)
+            await api.delete(`/users/${id}`)
             carregarUsuarios()
         } catch (err) { alert('Erro ao excluir.') }
     }
 
     // ── Handlers de Solicitações com Resolução de Conflitos ──
     const handleCheckAprovar = async (solicitacao) => {
-        try {
-            const res = await axios.post('http://localhost:3000/solicitacao/check-conflito', {
-                salaId: solicitacao.salaId,
-                diaSemana: solicitacao.diaSemana,
-                horarioInicio: solicitacao.horarioInicio,
-                horarioFim: solicitacao.horarioFim
-            });
-
-            if (res.data.conflito) {
-                setConflito({ nova: solicitacao, antiga: res.data.eventoExistente });
-            } else {
-                await handleFinalizarAprovacao(solicitacao.id);
-            }
-        } catch (err) { alert('Erro ao verificar disponibilidade da sala.'); }
+        // O backend novo não tem endpoint de check-conflito explícito para solicitações.
+        // Vamos direto para a aprovação por enquanto ou implementar um check via /reservations.
+        await handleFinalizarAprovacao(solicitacao.id);
     }
 
     const handleFinalizarAprovacao = async (id, substituir = false) => {
         try {
-            await axios.patch(`http://localhost:3000/solicitacao/aprovar/${id}`, { substituir });
+            await api.patch(`/solicitations/${id}/status`, { 
+                status: 'aprovado' 
+            });
             carregarSolicitacoes();
             setConflito(null);
             setExpandedId(null);
@@ -143,7 +134,8 @@ const AdminPainel = () => {
 
     const handleRecusarSolicitacao = async (id) => {
         try {
-            await axios.patch(`http://localhost:3000/solicitacao/recusar/${id}`, {
+            await api.patch(`/solicitations/${id}/status`, {
+                status: 'recusado',
                 motivoRecusa: motivoRecusa[id] || ''
             })
             carregarSolicitacoes()

@@ -8,12 +8,12 @@ from sqlalchemy.orm import Session
 from app.try_database import get_db
 from app.schemas.room import RoomCreate, RoomUpdate, RoomOut
 from app.services.room_service import room_service
-from app.services.rbac import require_role, ROLE_ADMIN
+from app.services.rbac import require_role, ROLE_USER, ROLE_ADMIN
 
 router = APIRouter(prefix="/rooms", tags=["rooms"])
 
 @router.get("/", response_model=List[RoomOut])
-def list_rooms(db: Session = Depends(get_db), _u=Depends(require_role(ROLE_ADMIN))):
+def list_rooms(db: Session = Depends(get_db), _u=Depends(require_role(ROLE_USER))):
     return room_service.get_all(db)
 
 @router.post("/", response_model=RoomOut, status_code=status.HTTP_201_CREATED)

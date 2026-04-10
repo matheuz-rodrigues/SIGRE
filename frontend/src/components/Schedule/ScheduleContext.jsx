@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../../services/api';
 
 export const ScheduleContext = createContext();
 
@@ -17,39 +17,44 @@ export const ScheduleProvider = ({ children }) => {
     const [professores, setProfessores] = useState([]);
     const [disciplinas, setDisciplinas] = useState([]);
     const [periodoAtivo, setPeriodoAtivo] = useState(null);
-
-    const API_URL = 'http://localhost:3000';
+    const [loading, setLoading] = useState(false);
 
     const recarregarDados = async () => {
+        const token = localStorage.getItem('access_token');
+        if (!token) return;
+
+        console.log("Atualizando dados...");
+        setLoading(true);
         try {
-            console.log("Atualizando dados...");
-            const [resCursos, resSalas, resPeriodos, resAlocacoes, resProfs, resDiscs] = await Promise.all([
-                axios.get(`${API_URL}/curso/all`),
-                axios.get(`${API_URL}/sala/all`),
-                axios.get(`${API_URL}/periodo/all`),
-                axios.get(`${API_URL}/alocacao/all`),
-                axios.get(`${API_URL}/professor/all`),
-                axios.get(`${API_URL}/disciplina/all`)
+            const [resCursos, resSalas, resPeriodos, resAloc, resProfs, resDiscs] = await Promise.all([
+                api.get('/courses/'),
+                api.get('/rooms/'),
+                api.get('/periods/'),
+                api.get('/reservations/'),
+                api.get('/professors/'),
+                api.get('/disciplines/'),
             ]);
 
-            setCursos(resCursos.data.map(c => ({ id: c.idCurso, nome: c.nomeCurso, sigla: c.siglaCurso, cor: c.corCurso })));
-            setSalas(resSalas.data.map(s => ({ id: s.idSala, nome: s.nomeSala, tipo: s.tipoSala })));
-            setProfessores(resProfs.data.map(p => ({ id: p.id || p.idProfessor, nome: p.nomeProf, email: p.emailProf, matricula: p.matriculaProf })));
-            setDisciplinas(resDiscs.data.map(d => ({ id: d.idDisciplina, nome: d.nomeDisciplina, matricula: d.matriculaDisciplina })));
+            setCursos(Array.isArray(resCursos.data) ? resCursos.data : []);
+            setSalas(Array.isArray(resSalas.data) ? resSalas.data : []);
             
-            const periodosFmt = resPeriodos.data.map(p => ({
-                id: p.idPeriodo,
-                semestre: p.semestre,
-                descricao: p.descricao,
-                dataInicio: p.dataInicio ? p.dataInicio.split('T')[0] : '',
-                dataFim: p.dataFim ? p.dataFim.split('T')[0] : ''
-            }));
+            const periodosFmt = Array.isArray(resPeriodos.data) 
+                ? resPeriodos.data.map(p => ({
+                    id: p.id,
+                    semestre: p.semestre,
+                    descricao: p.descricao,
+                    dataInicio: p.dataInicio ? p.dataInicio.split('T')[0] : '',
+                    dataFim: p.dataFim ? p.dataFim.split('T')[0] : ''
+                }))
+                : [];
             setPeriodos(periodosFmt);
             
             if (periodosFmt.length > 0 && !periodoAtivo) setPeriodoAtivo(periodosFmt[0].id);
 
-            setHorarios(resAlocacoes.data.map(aloc => ({
-                id: aloc.idAlocacao,
+            // Backend returns { items: [...] } for reservations
+            const alocItems = resAloc.data?.items || [];
+            setHorarios(alocItems.map(aloc => ({
+                id: aloc.id,
                 diaSemana: aloc.diaSemana,
                 horarioInicio: aloc.horarioInicio,
                 horarioFim: aloc.horarioFim,
@@ -58,13 +63,22 @@ export const ScheduleProvider = ({ children }) => {
                 cursoId: aloc.cursoId,
                 salaId: aloc.salaId,
                 periodoId: aloc.periodoId,
-                disciplina: aloc.disciplina?.nomeDisciplina,
-                professor: aloc.professor?.nomeProf,
-                semestre: aloc.periodo?.semestre
+                disciplina: aloc.disciplina,
+                professor: aloc.professor,
+                semestre: aloc.semestre
             })));
+
+            setProfessores(Array.isArray(resProfs.data) ? resProfs.data : []);
+            setDisciplinas(Array.isArray(resDiscs.data) ? resDiscs.data : []);
 
         } catch (error) {
             console.error("Erro ao carregar dados:", error);
+            if (error.response) {
+                console.error("Status:", error.response.status);
+                console.error("Data:", error.response.data);
+            }
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -74,8 +88,8 @@ export const ScheduleProvider = ({ children }) => {
 
     const createItem = async (endpoint, data, stateSetter, formatter) => {
         try {
-            const response = await axios.post(`${API_URL}${endpoint}`, data);
-            const novoItem = formatter(response.data);
+            const response = await api.post(endpoint, data);
+            const novoItem = formatter ? formatter(response.data) : response.data;
             stateSetter(prev => [...prev, novoItem]);
             return novoItem.id;
         } catch (error) {
@@ -85,15 +99,15 @@ export const ScheduleProvider = ({ children }) => {
         }
     };
 
-    const adicionarPeriodo = (d) => createItem('/periodo/create', d, setPeriodos, (r) => ({ id: r.idPeriodo, semestre: r.semestre, descricao: r.descricao, dataInicio: r.dataInicio.split('T')[0], dataFim: r.dataFim.split('T')[0] }));
-    const adicionarProfessor = (d) => createItem('/professor/create', d, setProfessores, (r) => ({ id: r.id || r.idProfessor, nome: r.nomeProf, email: r.emailProf, matricula: r.matriculaProf }));
-    const adicionarDisciplina = (d) => createItem('/disciplina/create', d, setDisciplinas, (r) => ({ id: r.idDisciplina, nome: r.nomeDisciplina, matricula: r.matriculaDisciplina }));
-    const adicionarCurso = (d) => createItem('/curso/create', d, setCursos, (r) => ({ id: r.idCurso, nome: r.nomeCurso, sigla: r.siglaCurso, cor: r.corCurso }));
-    const adicionarSala = (d) => createItem('/sala/create', d, setSalas, (r) => ({ id: r.idSala, nome: r.nomeSala, tipo: r.tipoSala }));
+    const adicionarPeriodo = (d) => createItem('/periods/', d, setPeriodos, (r) => ({ ...r, dataInicio: r.dataInicio.split('T')[0], dataFim: r.dataFim.split('T')[0] }));
+    const adicionarProfessor = (d) => createItem('/professors/', d, setProfessores);
+    const adicionarDisciplina = (d) => createItem('/disciplines/', d, setDisciplinas);
+    const adicionarCurso = (d) => createItem('/courses/', d, setCursos);
+    const adicionarSala = (d) => createItem('/rooms/', d, setSalas);
 
     const adicionarHorario = async (novoHorario) => {
         try {
-            await axios.post(`${API_URL}/alocacao/create`, novoHorario);
+            await api.post('/reservations/', novoHorario);
             recarregarDados(); 
             alert("Horário salvo!");
         } catch (error) {
@@ -103,7 +117,8 @@ export const ScheduleProvider = ({ children }) => {
 
     const atualizarHorario = async (id, dados) => {
         try {
-            await axios.put(`${API_URL}/alocacao/update`, { id, ...dados });
+            // Nota: Precisamos verificar se o endpoint de update existe ou usar POST/PATCH
+            await api.patch(`/reservations/${id}`, dados);
             recarregarDados();
             alert("Horário atualizado!");
         } catch (error) { console.error(error); alert("Erro ao atualizar."); }
@@ -112,7 +127,7 @@ export const ScheduleProvider = ({ children }) => {
     const removerHorario = async (id) => {
         if (!window.confirm("Tem certeza?")) return;
         try {
-            await axios.delete(`${API_URL}/alocacao/delete`, { data: { id } });
+            await api.delete(`/reservations/${id}`);
             setHorarios(prev => prev.filter(h => h.id !== id));
             alert("Excluído!");
         } catch (error) { console.error(error); alert("Erro ao excluir."); }
@@ -120,7 +135,7 @@ export const ScheduleProvider = ({ children }) => {
 
     return (
         <ScheduleContext.Provider value={{
-            cursos, salas, periodos, horarios, professores, disciplinas, periodoAtivo, setPeriodoAtivo,
+            cursos, salas, periodos, horarios, professores, disciplinas, periodoAtivo, setPeriodoAtivo, loading,
             adicionarHorario, atualizarHorario, removerHorario,
             adicionarPeriodo, adicionarProfessor, adicionarDisciplina, adicionarCurso, adicionarSala,
             recarregarDados 

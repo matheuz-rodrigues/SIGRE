@@ -6,11 +6,12 @@ import Footer from './components/Footer/Footer'
 import Login from './components/Login/Login'
 import Protection from './components/Protection/Protection'
 import UserView from './components/UserView/UserView'
+import { clearSession } from './services/AuthService'
 
 const getInitialRole  = () => localStorage.getItem('userRole') || null
 const getInitialAdmin = () =>
-  localStorage.getItem('isAdminAuthenticated') === 'true' &&
-  localStorage.getItem('userRole') === 'admin'
+  localStorage.getItem('userRole') === 'admin' ||
+  localStorage.getItem('isAdminAuthenticated') === 'true'
 
 function App() {
   const [userRole, setUserRole]   = useState(getInitialRole)
@@ -26,9 +27,9 @@ function App() {
   }
 
   const handleLogOut = () => {
+    clearSession()
     localStorage.removeItem('isAdminAuthenticated')
-    localStorage.removeItem('adminUser')
-    localStorage.removeItem('userRole')
+    
     setUserRole(null)
     setIsAdmin(false)
     setShowLogin(true)
@@ -36,7 +37,7 @@ function App() {
 
   if (isAdmin && isAuthenticated) {
     return (
-      <ScheduleProvider>
+      <ScheduleProvider key={`auth-${userRole}`}>
         <Protection onLogOut={handleLogOut} />
         <Footer />
       </ScheduleProvider>
@@ -45,7 +46,7 @@ function App() {
 
   if (isAuthenticated && !isAdmin) {
     return (
-      <ScheduleProvider>
+      <ScheduleProvider key={`auth-${userRole}`}>
         <UserView userRole={userRole} onLogOut={handleLogOut} />
       </ScheduleProvider>
     )
@@ -53,15 +54,15 @@ function App() {
 
   if (showLogin) {
     return (
-      <ScheduleProvider>
+      <>
         <Header isAdmin={true} setIsAdmin={() => setShowLogin(false)} />
         <Login onLoginSuccess={handleSuccessLogin} />
-      </ScheduleProvider>
+      </>
     )
   }
 
   return (
-    <ScheduleProvider>
+    <ScheduleProvider key="public">
       <div className='min-h-screen bg-gray-50'>
         <Header
           isAdmin={false}

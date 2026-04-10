@@ -9,12 +9,12 @@ from sqlalchemy.orm import Session
 from app.try_database import get_db
 from app.schemas.professor import ProfessorCreate, ProfessorUpdate, ProfessorOut
 from app.services.professor_service import professor_service
-from app.services.rbac import require_role, ROLE_ADMIN
+from app.services.rbac import require_role, ROLE_USER, ROLE_ADMIN
 
 router = APIRouter(prefix="/professors", tags=["professors"])
 
 @router.get("/", response_model=List[ProfessorOut], summary="Listar todos os professores")
-def list_professors(db: Session = Depends(get_db), _u=Depends(require_role(ROLE_ADMIN))):
+def list_professors(db: Session = Depends(get_db), _u=Depends(require_role(ROLE_USER))):
     return professor_service.get_all(db)
 
 @router.post("/", response_model=ProfessorOut, status_code=status.HTTP_201_CREATED, summary="Criar novo professor")

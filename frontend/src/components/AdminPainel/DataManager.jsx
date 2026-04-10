@@ -1,15 +1,15 @@
 import { useState, useEffect } from 'react'
 import { useSchedule } from '../Schedule/ScheduleContext'
 import { Edit2, Trash2, X, Plus, Check, BookOpen, Users, Building2, GraduationCap, Calendar, ArrowLeft } from 'lucide-react'
-import axios from 'axios'
+import api from '../../services/api'
 
-const API_URL = 'http://localhost:3000'
+
 const inp = "w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-white text-gray-800 focus:ring-2 focus:ring-indigo-400 focus:outline-none focus:border-indigo-400 transition-all text-sm"
 const lbl = "block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1.5"
 
 const CONFIG = {
     professores: {
-        title: 'Professores', singular: 'Professor', endpoint: 'professor', labelKey: 'nome',
+        title: 'Professores', singular: 'Professor', endpoint: 'professors', labelKey: 'nomeProf',
         icon: Users, color: '#1d4ed8', colorBg: '#dbeafe',
         fields: [
             { front: 'nome',      back: 'nomeProf',      label: 'Nome completo', type: 'text',  ph: 'Ex: João Silva' },
@@ -18,7 +18,7 @@ const CONFIG = {
         ],
     },
     disciplinas: {
-        title: 'Disciplinas', singular: 'Disciplina', endpoint: 'disciplina', labelKey: 'nome',
+        title: 'Disciplinas', singular: 'Disciplina', endpoint: 'disciplines', labelKey: 'nomeDisciplina',
         icon: BookOpen, color: '#7c3aed', colorBg: '#ede9fe',
         fields: [
             { front: 'nome',      back: 'nomeDisciplina',      label: 'Nome da disciplina', type: 'text', ph: 'Ex: Cálculo I' },
@@ -26,7 +26,7 @@ const CONFIG = {
         ],
     },
     cursos: {
-        title: 'Cursos', singular: 'Curso', endpoint: 'curso', labelKey: 'nome',
+        title: 'Cursos', singular: 'Curso', endpoint: 'courses', labelKey: 'nomeCurso',
         icon: GraduationCap, color: '#0891b2', colorBg: '#cffafe',
         fields: [
             { front: 'nome',  back: 'nomeCurso',  label: 'Nome do curso', type: 'text',  ph: 'Ex: Engenharia de Software' },
@@ -35,16 +35,22 @@ const CONFIG = {
         ],
     },
     salas: {
-        title: 'Salas', singular: 'Sala', endpoint: 'sala', labelKey: 'nome',
+        title: 'Salas', singular: 'Sala', endpoint: 'rooms', labelKey: 'nomeSala',
         icon: Building2, color: '#059669', colorBg: '#d1fae5',
         fields: [
-            { front: 'nome', back: 'nomeSala', label: 'Nome da sala', type: 'text', ph: 'Ex: Lab 01' },
-            { front: 'tipo', back: 'tipoSala', label: 'Tipo', type: 'select',
-              options: [{ v: 'sala', l: 'Sala de Aula' }, { v: 'laboratorio', l: 'Laboratório' }] },
+            { front: 'nome', back: 'nomeSala', label: 'Nome da sala', type: 'text', ph: 'Ex: 101' },
+            { front: 'tipo', back: 'tipoSalaId', label: 'Tipo', type: 'select',
+              options: [
+                  { v: '1', l: 'Laboratório' }, 
+                  { v: '2', l: 'Auditório' },
+                  { v: '3', l: 'Sala de Aula' },
+                  { v: '4', l: 'Sala de Estudos' }
+              ] },
+            { front: 'capacidade', back: 'capacidade', label: 'Capacidade', type: 'number', ph: 'Ex: 40' }
         ],
     },
     periodos: {
-        title: 'Períodos', singular: 'Período', endpoint: 'periodo', labelKey: 'semestre',
+        title: 'Períodos', singular: 'Período', endpoint: 'periods', labelKey: 'semestre',
         icon: Calendar, color: '#d97706', colorBg: '#fef3c7',
         fields: [
             { front: 'semestre',   back: 'semestre',   label: 'Semestre',    type: 'text', ph: 'Ex: 2025.1' },
@@ -164,9 +170,9 @@ const DataManager = ({ onReturnToHorarios }) => {
         const cfg = CONFIG[activeTab]
         try {
             if (payload.id) {
-                await axios.put(`${API_URL}/${cfg.endpoint}/update`, payload)
+                await api.put(`/${cfg.endpoint}/${payload.id}`, payload)
             } else {
-                await axios.post(`${API_URL}/${cfg.endpoint}/create`, payload)
+                await api.post(`/${cfg.endpoint}/`, payload)
             }
             recarregarDados()
             // Fecha modal e verifica se deve mostrar banner
@@ -183,7 +189,7 @@ const DataManager = ({ onReturnToHorarios }) => {
         const cfg = CONFIG[activeTab]
         if (!window.confirm('Tem certeza que deseja excluir?')) return
         try {
-            await axios.delete(`${API_URL}/${cfg.endpoint}/delete`, { data: { id } })
+            await api.delete(`/${cfg.endpoint}/${id}`)
             recarregarDados()
         } catch {
             alert('Erro ao excluir. Este item pode estar sendo usado em um horário.')

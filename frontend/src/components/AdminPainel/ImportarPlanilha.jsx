@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import * as XLSX from 'xlsx'
-import axios from 'axios'
+import api from '../../services/api'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import {
@@ -9,13 +9,13 @@ import {
     ChevronRight, Loader2, FileDown, History, UserCheck, FileText
 } from 'lucide-react'
 
-const API_URL = 'http://localhost:3000'
+
 
 const ABAS_CONFIG = {
     Professores: {
         icon: Users, color: '#1d4ed8', colorBg: '#dbeafe',
         colunas: ['Nome', 'Email', 'Matricula'],
-        endpoint: '/professor/create',
+        endpoint: '/professors/',
         toPayload: (row) => ({
             nomeProf:      row['Nome']?.toString().trim(),
             emailProf:     row['Email']?.toString().trim(),
@@ -26,7 +26,7 @@ const ABAS_CONFIG = {
     Disciplinas: {
         icon: BookOpen, color: '#7c3aed', colorBg: '#ede9fe',
         colunas: ['Nome', 'Codigo'],
-        endpoint: '/disciplina/create',
+        endpoint: '/disciplines/',
         toPayload: (row) => ({
             nomeDisciplina:      row['Nome']?.toString().trim(),
             matriculaDisciplina: row['Codigo']?.toString().trim(),
@@ -36,7 +36,7 @@ const ABAS_CONFIG = {
     Cursos: {
         icon: GraduationCap, color: '#0891b2', colorBg: '#cffafe',
         colunas: ['Nome', 'Sigla', 'Cor'],
-        endpoint: '/curso/create',
+        endpoint: '/courses/',
         toPayload: (row) => ({
             nomeCurso:  row['Nome']?.toString().trim(),
             siglaCurso: row['Sigla']?.toString().trim(),
@@ -47,11 +47,19 @@ const ABAS_CONFIG = {
     Salas: {
         icon: Building2, color: '#059669', colorBg: '#d1fae5',
         colunas: ['Nome', 'Tipo'],
-        endpoint: '/sala/create',
-        toPayload: (row) => ({
-            nomeSala: row['Nome']?.toString().trim(),
-            tipoSala: row['Tipo']?.toString().trim().toLowerCase().includes('lab') ? 'laboratorio' : 'sala',
-        }),
+        endpoint: '/rooms/',
+        toPayload: (row) => {
+            const raw = row['Tipo']?.toString().toLowerCase().trim() || '';
+            let tipoId = 3; // Padrão: Sala de Aula
+            if (raw.includes('lab')) tipoId = 1;
+            else if (raw.includes('audi')) tipoId = 2;
+            else if (raw.includes('estudo')) tipoId = 4;
+
+            return {
+                nomeSala: row['Nome']?.toString().trim(),
+                tipoSalaId: tipoId,
+            };
+        },
         label: (row) => row['Nome'],
     },
 }
@@ -125,7 +133,7 @@ const ImportarPlanilha = ({ onClose, onImportado }) => {
             const cfg = ABAS_CONFIG[aba]
             let ok = 0, erros = 0
             for (const row of rows) {
-                try { await axios.post(`${API_URL}${cfg.endpoint}`, cfg.toPayload(row)); ok++ }
+                try { await api.post(cfg.endpoint, cfg.toPayload(row)); ok++ }
                 catch { erros++ }
             }
             res[aba] = { ok, erros, total: rows.length }
@@ -144,47 +152,44 @@ const ImportarPlanilha = ({ onClose, onImportado }) => {
 
             // 1. Busca e formatação dos dados
             if (tipo === 'cadastros') {
-                const [resProfs, resDiscs, resCursos, resSalas] = await Promise.all([
-                    axios.get(`${API_URL}/professor/all`),
-                    axios.get(`${API_URL}/disciplina/all`),
-                    axios.get(`${API_URL}/curso/all`),
-                    axios.get(`${API_URL}/sala/all`),
-                ])
+                const res = await api.get('/reports/base')
+                const { professors, disciplines, courses, rooms } = res.data
+                
                 conjuntosDeDados.push({
                     titulo: 'Professores',
                     colunas: ['Nome', 'Email', 'Matrícula'],
-                    linhas: resProfs.data.map(p => ({ Nome: p.nomeProf, Email: p.emailProf, Matricula: p.matriculaProf }))
+                    linhas: professors.map(p => ({ Nome: p.nomeProf, Email: p.emailProf, Matricula: p.matriculaProf }))
                 })
                 conjuntosDeDados.push({
                     titulo: 'Disciplinas',
                     colunas: ['Nome', 'Código'],
-                    linhas: resDiscs.data.map(d => ({ Nome: d.nomeDisciplina, Codigo: d.matriculaDisciplina }))
+                    linhas: disciplines.map(d => ({ Nome: d.nomeDisciplina, Codigo: d.matriculaDisciplina }))
                 })
                 conjuntosDeDados.push({
                     titulo: 'Cursos',
                     colunas: ['Nome', 'Sigla', 'Cor'],
-                    linhas: resCursos.data.map(c => ({ Nome: c.nomeCurso, Sigla: c.siglaCurso, Cor: c.corCurso }))
+                    linhas: courses.map(c => ({ Nome: c.nomeCurso, Sigla: c.siglaCurso, Cor: c.corCurso }))
                 })
                 conjuntosDeDados.push({
                     titulo: 'Salas',
                     colunas: ['Nome', 'Tipo'],
-                    linhas: resSalas.data.map(s => ({ Nome: s.nomeSala, Tipo: s.tipoSala === 'laboratorio' ? 'Laboratório' : 'Sala de Aula' }))
+                    linhas: rooms.map(s => ({ Nome: s.nomeSala, Tipo: s.tipoSala || 'Sala de Aula' }))
                 })
             } 
             else if (tipo === 'usuarios') {
-                const res = await axios.get(`${API_URL}/usuario/all`)
+                const res = await api.get('/reports/users')
                 conjuntosDeDados.push({
                     titulo: 'Usuários do Sistema',
                     colunas: ['Nome', 'Email', 'Papel', 'Status'],
-                    linhas: res.data.map(u => ({ Nome: u.nome, Email: u.email, Papel: u.role || 'Usuário', Status: u.ativo ? 'Ativo' : 'Inativo' }))
+                    linhas: res.data.map(u => ({ Nome: u.Nome, Email: u.Email, Papel: u.Papel, Status: u.Status }))
                 })
             }
             else if (tipo === 'horarios') {
-                const res = await axios.get(`${API_URL}/horario/historico`)
+                const res = await api.get('/reports/history')
                 conjuntosDeDados.push({
                     titulo: 'Histórico de Horários',
                     colunas: ['Data', 'Horário', 'Professor', 'Disciplina', 'Sala'],
-                    linhas: res.data.map(h => ({ Data: h.data, Horário: h.periodo, Professor: h.professor, Disciplina: h.disciplina, Sala: h.sala }))
+                    linhas: res.data.map(h => ({ Data: h.Data, Horário: h.Horário, Professor: h.Professor, Disciplina: h.Disciplina, Sala: h.Sala }))
                 })
             }
 

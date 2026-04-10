@@ -8,12 +8,12 @@ from sqlalchemy.orm import Session
 from app.try_database import get_db
 from app.schemas.period import PeriodCreate, PeriodUpdate, PeriodOut
 from app.services.period_service import period_service
-from app.services.rbac import require_role, ROLE_ADMIN
+from app.services.rbac import require_role, ROLE_USER, ROLE_ADMIN
 
 router = APIRouter(prefix="/periods", tags=["periods"])
 
 @router.get("/", response_model=List[PeriodOut])
-def list_periods(db: Session = Depends(get_db), _u=Depends(require_role(ROLE_ADMIN))):
+def list_periods(db: Session = Depends(get_db), _u=Depends(require_role(ROLE_USER))):
     return period_service.get_all(db)
 
 @router.post("/", response_model=PeriodOut, status_code=status.HTTP_201_CREATED)

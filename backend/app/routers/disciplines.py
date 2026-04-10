@@ -8,12 +8,12 @@ from sqlalchemy.orm import Session
 from app.try_database import get_db
 from app.schemas.discipline import DisciplineCreate, DisciplineUpdate, DisciplineOut
 from app.services.discipline_service import discipline_service
-from app.services.rbac import require_role, ROLE_ADMIN
+from app.services.rbac import require_role, ROLE_USER, ROLE_ADMIN
 
 router = APIRouter(prefix="/disciplines", tags=["disciplines"])
 
 @router.get("/", response_model=List[DisciplineOut])
-def list_disciplines(db: Session = Depends(get_db), _u=Depends(require_role(ROLE_ADMIN))):
+def list_disciplines(db: Session = Depends(get_db), _u=Depends(require_role(ROLE_USER))):
     return discipline_service.get_all(db)
 
 @router.post("/", response_model=DisciplineOut, status_code=status.HTTP_201_CREATED)

@@ -29,17 +29,17 @@ const UsuarioCard = ({ u, onAprovar, onRecusar, onDeletar, showAprovar, showDesa
             <div className="flex gap-2 ml-4">
                 {showAprovar && (
                     <>
-                        <button onClick={() => onRecusar(u.idUsuario)} className="px-3 py-1.5 rounded-lg text-xs font-bold border border-red-200 text-red-500 hover:bg-red-50">Recusar</button>
-                        <button onClick={() => onAprovar(u.idUsuario)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-green-600 text-white hover:bg-green-700">Aprovar</button>
+                        <button onClick={() => onRecusar(u.id)} className="px-3 py-1.5 rounded-lg text-xs font-bold border border-red-200 text-red-500 hover:bg-red-50">Recusar</button>
+                        <button onClick={() => onAprovar(u.id)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-green-600 text-white hover:bg-green-700">Aprovar</button>
                     </>
                 )}
                 {showDesativar && (
-                    <button onClick={() => onRecusar(u.idUsuario)} className="px-3 py-1.5 rounded-lg text-xs font-bold border text-gray-400 hover:bg-gray-50">Desativar</button>
+                    <button onClick={() => onRecusar(u.id)} className="px-3 py-1.5 rounded-lg text-xs font-bold border text-gray-400 hover:bg-gray-50">Desativar</button>
                 )}
                 {showReativar && (
-                    <button onClick={() => onAprovar(u.idUsuario)} className="px-3 py-1.5 rounded-lg text-xs font-bold border border-green-200 text-green-600 hover:bg-green-50">Ativar</button>
+                    <button onClick={() => onAprovar(u.id)} className="px-3 py-1.5 rounded-lg text-xs font-bold border border-green-200 text-green-600 hover:bg-green-50">Ativar</button>
                 )}
-                <button onClick={() => onDeletar(u.idUsuario)} className="p-1.5 text-gray-300 hover:text-red-500 transition-colors">
+                <button onClick={() => onDeletar(u.id)} className="p-1.5 text-gray-300 hover:text-red-500 transition-colors">
                     <XCircle size={18} />
                 </button>
             </div>
@@ -74,7 +74,7 @@ export default function UserManagement({ usuarios, onAprovar, onRecusar, onDelet
                         <span className="w-2 h-2 rounded-full bg-amber-500" /> Aguardando Aprovação
                     </h4>
                     {pendentes.map(u => (
-                        <UsuarioCard key={u.idUsuario} u={u} onAprovar={onAprovar} onRecusar={onRecusar} onDeletar={onDeletar} showAprovar />
+                        <UsuarioCard key={u.id} u={u} onAprovar={onAprovar} onRecusar={onRecusar} onDeletar={onDeletar} showAprovar />
                     ))}
                 </div>
             )}
@@ -85,7 +85,7 @@ export default function UserManagement({ usuarios, onAprovar, onRecusar, onDelet
                         <span className="w-2 h-2 rounded-full bg-green-500" /> Usuários Ativos
                     </h4>
                     {ativos.map(u => (
-                        <UsuarioCard key={u.idUsuario} u={u} onAprovar={onAprovar} onRecusar={onRecusar} onDeletar={onDeletar} showDesativar />
+                        <UsuarioCard key={u.id} u={u} onAprovar={onAprovar} onRecusar={onRecusar} onDeletar={onDeletar} showDesativar />
                     ))}
                 </div>
             )}
@@ -96,7 +96,7 @@ export default function UserManagement({ usuarios, onAprovar, onRecusar, onDelet
                         <span className="w-2 h-2 rounded-full bg-gray-400" /> Inativos/Recusados
                     </h4>
                     {recusados.map(u => (
-                        <UsuarioCard key={u.idUsuario} u={u} onAprovar={onAprovar} onRecusar={onRecusar} onDeletar={onDeletar} showReativar />
+                        <UsuarioCard key={u.id} u={u} onAprovar={onAprovar} onRecusar={onRecusar} onDeletar={onDeletar} showReativar />
                     ))}
                 </div>
             )}

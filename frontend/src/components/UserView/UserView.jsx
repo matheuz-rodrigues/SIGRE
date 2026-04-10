@@ -6,7 +6,7 @@ import axios from 'axios'
 import { Building2, ClipboardList, Plus, GraduationCap, BookOpen, LogOut, Bell, Calendar, Clock } from 'lucide-react'
 import logo from '../../assets/logouepa.png'
 
-const API_URL = 'http://localhost:3000'
+import api from '../../services/api'
 
 const roleConfig = {
     aluno:     { label: 'Aluno',     Icon: GraduationCap, color: '#7c3aed' },
@@ -38,7 +38,7 @@ const UserView = ({ userRole, onLogOut }) => {
         if (!userEmail) return
         setLoading(true)
         try {
-            const res = await axios.get(`${API_URL}/solicitacao/minhas`, {
+            const res = await api.get('/solicitations/mine', {
                 params: { email: userEmail }
             })
             setSolicitacoes(res.data.map(formatSolicitacao))

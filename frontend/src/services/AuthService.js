@@ -30,6 +30,10 @@ export const saveSession = (userData) => {
   localStorage.setItem('userName',     userData.nome)
   localStorage.setItem('userEmail',    userData.email)
   localStorage.setItem('userId',       userData.id)
+  
+  if (userData.papel === 'admin') {
+    localStorage.setItem('isAdminAuthenticated', 'true')
+  }
 }
 
 /**

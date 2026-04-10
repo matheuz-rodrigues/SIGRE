@@ -8,12 +8,12 @@ from sqlalchemy.orm import Session
 from app.try_database import get_db
 from app.schemas.course import CourseCreate, CourseUpdate, CourseOut
 from app.services.course_service import course_service
-from app.services.rbac import require_role, ROLE_ADMIN
+from app.services.rbac import require_role, ROLE_USER, ROLE_ADMIN
 
 router = APIRouter(prefix="/courses", tags=["courses"])
 
 @router.get("/", response_model=List[CourseOut])
-def list_courses(db: Session = Depends(get_db), _u=Depends(require_role(ROLE_ADMIN))):
+def list_courses(db: Session = Depends(get_db), _u=Depends(require_role(ROLE_USER))):
     return course_service.get_all(db)
 
 @router.post("/", response_model=CourseOut, status_code=status.HTTP_201_CREATED)

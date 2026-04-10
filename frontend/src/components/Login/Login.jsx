@@ -10,8 +10,7 @@ import { login, register, saveSession } from '../../services/AuthService'
 import { getCursos } from '../../services/CouserService'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
-// Admin usa credenciais locais (não passa pelo backend)
-const ADMIN_CREDENTIALS = { username: 'admin', password: 'admin456' }
+// Admin usa credenciais sincronizadas com o backend
 
 const roleConfig = {
     admin:     { label: 'Administrador', icon: Shield,        color: '#1c1aa3' },
@@ -60,22 +59,6 @@ const Login = ({ onLoginSuccess }) => {
         setLoading(true)
 
         try {
-            // Admin: validação local (sem chamada ao backend)
-            if (activeRole === 'admin') {
-                if (
-                    formData.username === ADMIN_CREDENTIALS.username &&
-                    formData.password === ADMIN_CREDENTIALS.password
-                ) {
-                    localStorage.setItem('userRole',  'admin')
-                    localStorage.setItem('userName',  formData.username)
-                    localStorage.setItem('userEmail', formData.username)
-                    onLoginSuccess('admin')
-                } else {
-                    setError('Usuário ou senha incorretos')
-                }
-                return
-            }
-
             // Aluno / Professor: chama o backend
             const userData = await login(formData.username, formData.password)
 
@@ -345,12 +328,6 @@ const Login = ({ onLoginSuccess }) => {
                                 </p>
                             )}
 
-                            {activeRole === 'admin' && (
-                                <p className="mt-2 text-[11px] text-gray-400 text-center">
-                                    Teste — admin: <span className="font-mono text-gray-500">admin</span>{' '}
-                                    / <span className="font-mono text-gray-500">admin456</span>
-                                </p>
-                            )}
                         </form>
                     )}
 

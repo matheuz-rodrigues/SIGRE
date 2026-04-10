@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { useSchedule } from '../Schedule/ScheduleContext'
-import axios from 'axios'
+import api from '../../services/api'
 import {
     X, Building2, Calendar, Clock, AlignLeft,
     Users, ChevronDown, CheckCircle2, Loader2, AlertCircle
 } from 'lucide-react'
 import { diasSemana } from '../../data/data'
 
-const API_URL = 'http://localhost:3000'
+
 
 const MOTIVOS = [
     { value: 'palestra',     label: 'Palestra' },
@@ -94,7 +94,7 @@ const RoomRequestForm = ({ onClose, userRole, onSolicitacaoCriada }) => {
                 horarioFim:    form.horarioFim,
                 salaId:        parseInt(form.salaId),
             }
-            const res = await axios.post(`${API_URL}/solicitacao/create`, payload)
+            const res = await api.post('/solicitations/', payload)
             if (onSolicitacaoCriada) onSolicitacaoCriada(res.data)
             setStep(2)
         } catch (err) {
