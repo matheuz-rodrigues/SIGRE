@@ -5,6 +5,6 @@ import api from './api'
  * Retorna: [{ id, nome }, ...]
  */
 export const getCursos = async () => {
-  const res = await api.get('/curso/all')
+  const res = await api.get('/courses/')
   return res.data
 }

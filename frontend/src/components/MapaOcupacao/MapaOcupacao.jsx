@@ -1,10 +1,15 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
-  Search, Clock, MapPin, GraduationCap, FileText, Download, Calendar
+  Search, Clock, MapPin, GraduationCap, FileText, Download, Calendar, Loader2
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+
+import { getReservations } from '../../services/ReservationService';
+import { getRooms } from '../../services/RoomService';
+import { getPeriods } from '../../services/PeriodService';
+import {getCursos} from '../../services/CouserService'
 
 const Shift = { MANHA: 'MANHA', TARDE: 'TARDE' };
 
@@ -25,13 +30,88 @@ const SLOTS = [
 ];
 
 const WEEKDAYS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+const WEEKDAY_MAP = { "Segunda": 1, "Terça": 2, "Quarta": 3, "Quinta": 4, "Sexta": 5, "Sábado": 6 }
+
+// Converte "07:30-08:20" em [hora_inicio, hora_fim] como números para comparar
+const parseSlotHours = (label) => {
+  const [start] = label.split('-')
+  const [h, m] = start.split(':').map(Number)
+  return h * 60 + m
+}
 
 export default function MapaOcupacao() {
   const [filtroTurno, setFiltroTurno] = useState('todos');
-  const [filtroCurso, setFiltroCurso] = useState('Eng. Software');
-  const [filtroTurma, setFiltroTurma] = useState('2024.1');
+  const [filtroCurso, setFiltroCurso] = useState('');
+  const [filtroTurma, setFiltroTurma] = useState('');
   const [filtroSala, setFiltroSala] = useState('todas');
   const [buscaProfessor, setBuscaProfessor] = useState('');
+
+  const [reservas , setReservas] = useState([])
+  const [salas , setSalas] = useState([])
+  const [periodos , setPeriodos] = useState([])
+  const [cursos , setCursos] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [erro, setErro] = useState('')
+
+  // carrega dados do backend
+  useEffect(() => {
+    const carregar = async() => {
+      setLoading(true)
+      setErro('')
+      try {
+        const [resReservas, resSalas, resPeriodos, resCursos]= await Promise.all([
+          getReservations({ roomId: filtroSala !== 'todas' ? filtroSala : undefined }),
+          getRooms(),
+          getPeriods(),
+          getCursos(),
+        ])
+
+        setReservas(resReservas?.items || [])
+        setSalas(resSalas || [])
+        setPeriodos(resPeriodos || [])
+        setCursos(resCursos || [])
+
+        // Define valores padrão dos filtros com o primeiro item de cada lista
+        if (resPeriodos?.length)   setFiltroTurma(String(resPeriodos[0].id))
+        if (resCursos?.length)     setFiltroCurso(String(resCursos[0].id || resCursos[0].idCurso))
+      } catch (err) {
+        setErro('Erro ao carregar dados. Verifique se o backend esta rodando')
+        console.error(err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    carregar()
+  }, [filtroSala])
+
+  // ── Helpers para encontrar reserva em um slot/dia ─────────────────────────
+  const encontrarReserva = (slot, dia) => {
+    if (slot.isBreak) return null
+    const slotMinutos = parseSlotHours(slot.label)
+    const diaSemana = WEEKDAY_MAP[dia]
+ 
+    return reservas.find(r => {
+      const start = new Date(r.start?.dateTime || r.start)
+      if (start.getDay() !== diaSemana) return false
+ 
+      const startMinutos = start.getHours() * 60 + start.getMinutes()
+      if (Math.abs(startMinutos - slotMinutos) > 30) return false
+ 
+      // Filtro de sala
+      const priv = r.extendedProperties?.private || {}
+      if (filtroSala !== 'todas' && String(priv.fk_sala) !== String(filtroSala)) return false
+ 
+      // Filtro de professor (busca no summary)
+      if (buscaProfessor && !r.summary?.toLowerCase().includes(buscaProfessor.toLowerCase())) return false
+ 
+      return true
+    })
+  }
+ 
+  const nomeSala = (salaId) => {
+    const sala = salas.find(s => String(s.id) === String(salaId))
+    return sala?.nomeSala || sala?.descricao_sala || `Sala ${salaId}`
+  }
 
   // --- EXPORTAR EXCEL 
   const exportToExcel = () => {
@@ -72,6 +152,8 @@ export default function MapaOcupacao() {
   
   const RenderTabelaTurno = ({ titulo, turnoAlvo }) => {
     const slotsFiltrados = SLOTS.filter(s => s.shift === turnoAlvo);
+    const cursoSelecionado = cursos.find(c => String(c.id) === filtroCurso)
+    const periodoSelecionado = periodos.find(p => String(p.id) === filtroTurma)
 
     return (
       <div className="mb-10">
@@ -96,20 +178,35 @@ export default function MapaOcupacao() {
                   <td className={`p-4 text-[10px] font-black border-r border-slate-100 ${slot.isBreak ? 'bg-amber-50 text-amber-600' : 'bg-slate-50 text-slate-500'}`}>
                     {slot.label}
                   </td>
-                  {WEEKDAYS.map(day => (
-                    <td key={day} className={`p-2 border-l border-slate-50 ${slot.isBreak ? 'bg-amber-50/20' : ''}`}>
-                      {!slot.isBreak && (
-                        <div className="min-h-[70px] p-2 rounded-lg border border-blue-100 bg-blue-50/30">
-                          <p className="text-[8px] font-black text-blue-900 uppercase tracking-tighter">{filtroCurso} {filtroTurma}</p>
-                          <p className="text-[9px] text-blue-700 font-bold mt-1">Thiago Conte</p>
-                          <p className="text-[8px] text-blue-500 mt-2 font-bold uppercase">
-                            {filtroSala === 'todas' ? (WEEKDAYS.indexOf(day) % 2 === 0 ? 'Sala 03' : 'LABINF') : filtroSala}
-                          </p>
-                        </div>
-                      )}
-                      {slot.isBreak && <div className="text-center text-[8px] font-black text-amber-400 uppercase tracking-widest">Pausa</div>}
-                    </td>
-                  ))}
+                  {WEEKDAYS.map(day => {
+                    const reserva = encontrarReserva(slot, day)
+                    const priv = reserva?.extendedProperties?.private || {}
+                    return (
+                      <td key={day} className={`p-2 border-l border-slate-50 ${slot.isBreak ? 'bg-amber-50/20' : ''}`}>
+                        {slot.isBreak && (
+                          <div className="text-center text-[8px] font-black text-amber-400 uppercase tracking-widest">Pausa</div>
+                        )}
+                        {!slot.isBreak && reserva && (
+                          <div className="min-h-[70px] p-2 rounded-lg border border-blue-200 bg-blue-50">
+                            <p className="text-[8px] font-black text-blue-900 uppercase tracking-tighter">
+                              {cursoSelecionado?.nomeCurso || '—'} {periodoSelecionado?.semestre || '—'}
+                            </p>
+                            <p className="text-[9px] text-blue-700 font-bold mt-1">
+                              {reserva.summary?.replace(/^\[.*?\]\s*/, '') || '—'}
+                            </p>
+                            <p className="text-[8px] text-blue-500 mt-2 font-bold uppercase">
+                              {nomeSala(priv.fk_sala)}
+                            </p>
+                          </div>
+                        )}
+                        {!slot.isBreak && !reserva && (
+                          <div className="min-h-[70px] p-2 rounded-lg border border-slate-100 bg-slate-50/30">
+                            <p className="text-[8px] text-slate-300 text-center mt-4">livre</p>
+                          </div>
+                        )}
+                      </td>
+                    )
+                  })}
                 </tr>
               ))}
             </tbody>
@@ -118,6 +215,27 @@ export default function MapaOcupacao() {
       </div>
     );
   };
+
+  // Render
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-slate-50">
+        <div className="flex flex-col items-center gap-3 text-slate-400">
+          <Loader2 size={36} className="animate-spin text-[#1c1aa3]" />
+          <p className="text-sm font-semibold">Carregando mapa de ocupação...</p>
+        </div>
+      </div>
+    )
+  }
+ 
+  if (erro) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-slate-50">
+        <div className="bg-red-50 border border-red-200 text-red-600 px-6 py-4 rounded-xl text-sm">{erro}</div>
+      </div>
+    )
+  }
 
   return (
     <div className="p-6 bg-slate-50 min-h-screen">
@@ -137,14 +255,17 @@ export default function MapaOcupacao() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+           {/* Busca professor */}
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Professor</label>
             <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
               <Search size={16} className="text-slate-400" />
-              <input value={buscaProfessor} onChange={e => setBuscaProfessor(e.target.value)} placeholder="Thiago Conte" className="bg-transparent w-full outline-none text-xs" />
+              <input value={buscaProfessor} onChange={e => setBuscaProfessor(e.target.value)}
+                placeholder="Buscar professor..." className="bg-transparent w-full outline-none text-xs" />
             </div>
           </div>
 
+          {/* Turno */}
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Turno</label>
             <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold">
@@ -157,39 +278,42 @@ export default function MapaOcupacao() {
             </div>
           </div>
 
+          {/* Curso — carregado do backend */}
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Curso</label>
             <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold">
               <GraduationCap size={16} className="text-slate-400" />
               <select value={filtroCurso} onChange={e => setFiltroCurso(e.target.value)} className="bg-transparent w-full outline-none">
-                <option>Eng. Software</option>
-                <option>Eng. Florestal</option>
-                <option>Matemática</option>
+                {cursos.map(c => (
+                  <option key={c.id || c.idCurso} value={String(c.id || c.idCurso)}>{c.nomeCurso}</option>
+                ))}
               </select>
             </div>
           </div>
 
+          {/* Período — carregado do backend */}
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Turma</label>
+            <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Período</label>
             <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold">
               <Calendar size={16} className="text-slate-400" />
               <select value={filtroTurma} onChange={e => setFiltroTurma(e.target.value)} className="bg-transparent w-full outline-none">
-                <option>2024.1</option>
-                <option>2024.2</option>
-                <option>2023.1</option>
+                {periodos.map(p => (
+                  <option key={p.id} value={String(p.id)}>{p.semestre}</option>
+                ))}
               </select>
             </div>
           </div>
 
+          {/* Sala — carregada do backend */}
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Sala</label>
             <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold">
               <MapPin size={16} className="text-slate-400" />
               <select value={filtroSala} onChange={e => setFiltroSala(e.target.value)} className="bg-transparent w-full outline-none">
                 <option value="todas">Todas</option>
-                <option>Sala 01</option>
-                <option>Sala 03</option>
-                <option>LABINF</option>
+                {salas.map(s => (
+                  <option key={s.id} value={String(s.id)}>{s.nomeSala || s.descricao_sala}</option>
+                ))}
               </select>
             </div>
           </div>

@@ -6,7 +6,7 @@ import api from './api'
  * Recebe: { id, nome, email, username, papel, access_token, token_type }
  */
 export const login = async (username, senha) => {
-  const res = await api.post('/auth/login', { username, senha })
+  const res = await api.post('/auth/login', { username, password: senha })
   return res.data
 }
 
