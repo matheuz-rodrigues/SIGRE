@@ -11,6 +11,18 @@ def test_create_professor_admin(client, admin_token_headers, db_session):
     assert response.status_code == 201
     assert response.json()["nomeProf"] == "Professor Teste"
 
+
+def test_create_professor_without_matricula(client, admin_token_headers):
+    payload = {
+        "nomeProf": "Testador da Silva",
+        "emailProf": "testador.sem.matricula@test.com",
+    }
+    response = client.post("/professors/", json=payload, headers=admin_token_headers)
+    assert response.status_code == 201
+    data = response.json()
+    assert data["nomeProf"] == "Testador da Silva"
+    assert data.get("matriculaProf") in (None, "")
+
 def test_create_professor_unauthorized(client):
     payload = {
         "nomeProf": "Unauth Prof",
@@ -71,3 +83,17 @@ def test_delete_professor_unauthorized(client, db_session):
         db_session.refresh(prof)
     response = client.delete(f"/professors/{prof.id}")
     assert response.status_code == 401
+
+
+def test_update_professor_not_found(client, admin_token_headers):
+    response = client.put(
+        "/professors/99999",
+        json={"nomeProf": "Não existe"},
+        headers=admin_token_headers,
+    )
+    assert response.status_code == 404
+
+
+def test_delete_professor_not_found(client, admin_token_headers):
+    response = client.delete("/professors/99999", headers=admin_token_headers)
+    assert response.status_code == 404

@@ -23,8 +23,8 @@ class Professor(Base):
     # E-mail institucional ou de contato (único para identificação)
     email = Column(String(150), unique=True, nullable=False)
     
-    # Matrícula funcional (única)
-    matricula = Column(String(50), unique=True, nullable=False)
+    # Matrícula / SIAPE (opcional; única quando informada)
+    matricula = Column(String(50), unique=True, nullable=True)
     
     # Campos de auditoria mantidos automaticamente
     created_at = Column(TIMESTAMP, server_default=func.now())

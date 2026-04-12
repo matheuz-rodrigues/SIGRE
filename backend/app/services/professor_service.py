@@ -11,15 +11,20 @@ class ProfessorService(BaseService[Professor]):
         super().__init__(professor_repository)
 
     def create(self, db: Session, data: ProfessorCreate) -> Professor:
+        if not data.emailProf or not str(data.emailProf).strip():
+            raise HTTPException(status_code=400, detail="E-mail do professor é obrigatório")
+
         if db.query(Professor).filter(Professor.email == data.emailProf).first():
             raise HTTPException(status_code=409, detail="Professor com este e-mail já cadastrado")
-        if db.query(Professor).filter(Professor.matricula == data.matriculaProf).first():
+
+        mat = (data.matriculaProf or "").strip() or None
+        if mat and db.query(Professor).filter(Professor.matricula == mat).first():
             raise HTTPException(status_code=409, detail="Professor com esta matrícula já cadastrada")
-            
+
         db_data = {
             "nome": data.nomeProf,
-            "email": data.emailProf,
-            "matricula": data.matriculaProf
+            "email": data.emailProf.strip(),
+            "matricula": mat,
         }
         return self.repository.create(db, db_data)
 
@@ -34,7 +39,8 @@ class ProfessorService(BaseService[Professor]):
         if data.emailProf is not None:
             update_data["email"] = data.emailProf
         if data.matriculaProf is not None:
-            update_data["matricula"] = data.matriculaProf
+            m = (data.matriculaProf or "").strip() or None
+            update_data["matricula"] = m
             
         return self.repository.update(db, db_obj, update_data)
 

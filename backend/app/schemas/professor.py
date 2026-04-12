@@ -7,8 +7,10 @@ class ProfessorBase(BaseModel):
     matriculaProf: Optional[str] = Field(None, validation_alias=AliasChoices("matriculaProf", "matricula"), serialization_alias="matriculaProf")
 
 class ProfessorCreate(BaseModel):
+    """matriculaProf é opcional (SIAPE / matrícula funcional)."""
+
     nomeProf: str
-    emailProf: Optional[str] = None
+    emailProf: str
     matriculaProf: Optional[str] = None
 
 class ProfessorUpdate(BaseModel):
