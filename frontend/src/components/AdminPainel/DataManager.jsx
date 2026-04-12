@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useSchedule } from '../Schedule/ScheduleContext'
-import { Edit2, Trash2, X, Plus, Check, BookOpen, Users, Building2, GraduationCap, Calendar, ArrowLeft } from 'lucide-react'
+import { Edit2, Trash2, X, Plus, Check, BookOpen, Users, Building2, GraduationCap, Calendar, ArrowLeft, Layers } from 'lucide-react'
 import api from '../../services/api'
-
 
 const inp = "w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-white text-gray-800 focus:ring-2 focus:ring-indigo-400 focus:outline-none focus:border-indigo-400 transition-all text-sm"
 const lbl = "block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1.5"
@@ -21,8 +20,10 @@ const CONFIG = {
         title: 'Disciplinas', singular: 'Disciplina', endpoint: 'disciplines', labelKey: 'nomeDisciplina',
         icon: BookOpen, color: '#7c3aed', colorBg: '#ede9fe',
         fields: [
-            { front: 'nome',      back: 'nomeDisciplina',      label: 'Nome da disciplina', type: 'text', ph: 'Ex: Cálculo I' },
-            { front: 'matricula', back: 'matriculaDisciplina', label: 'Código/Sigla',        type: 'text', ph: 'Ex: MAT001' },
+            { front: 'nome',        back: 'nomeDisciplina',      label: 'Nome da disciplina', type: 'text', ph: 'Ex: Cálculo I' },
+            { front: 'matricula',   back: 'matriculaDisciplina', label: 'Código/Sigla',       type: 'text', ph: 'Ex: MAT001' },
+            // NOVO CAMPO: Lista dinâmica de Cursos
+            { front: 'cursoIdFake', back: 'cursoIdFake',         label: 'Curso da Disciplina', type: 'dynamic-select', listName: 'cursos' },
         ],
     },
     cursos: {
@@ -41,7 +42,7 @@ const CONFIG = {
             { front: 'nome', back: 'nomeSala', label: 'Nome da sala', type: 'text', ph: 'Ex: 101' },
             { front: 'tipo', back: 'tipoSalaId', label: 'Tipo', type: 'select',
               options: [
-                  { v: '1', l: 'Laboratório' }, 
+                  { v: '1', l: 'Laboratório' },
                   { v: '2', l: 'Auditório' },
                   { v: '3', l: 'Sala de Aula' },
                   { v: '4', l: 'Sala de Estudos' }
@@ -61,12 +62,28 @@ const CONFIG = {
     },
 }
 
-// ─── Modal criar/editar ───────────────────────────────────────────────
-const ItemModal = ({ tipo, item, onSave, onClose }) => {
+// ─── Modal criar/editar (genérico) ───────────────────────────────────────────
+const ItemModal = ({ tipo, item, lists, onSave, onClose }) => {
     const cfg = CONFIG[tipo]
     const isEdit = !!item
     const initial = {}
-    cfg.fields.forEach(f => { initial[f.front] = item?.[f.front] || '' })
+
+    // Preenche os dados do modal
+    cfg.fields.forEach(f => {
+        let val = item?.[f.front] || item?.[f.back] || ''
+        
+        // TRUQUE: Desempacota o Curso escondido na Disciplina
+        if (tipo === 'disciplinas' && item?.matriculaDisciplina?.includes('| META:')) {
+            if (f.front === 'matricula') {
+                val = item.matriculaDisciplina.split('| META:')[0].trim();
+            }
+            if (f.front === 'cursoIdFake') {
+                try { val = JSON.parse(item.matriculaDisciplina.split('| META:')[1]).cId || ''; } catch(e){}
+            }
+        }
+        initial[f.front] = val
+    })
+
     const [data, setData] = useState(initial)
     const set = (k, v) => setData(d => ({ ...d, [k]: v }))
 
@@ -75,7 +92,17 @@ const ItemModal = ({ tipo, item, onSave, onClose }) => {
         cfg.fields.forEach(f => {
             if (data[f.front] !== undefined && data[f.front] !== '') payload[f.back] = data[f.front]
         })
-        if (isEdit) payload.id = item.id
+
+        // TRUQUE: Empacota o Curso na Disciplina antes de enviar para o backend
+        if (tipo === 'disciplinas' && payload.cursoIdFake) {
+            payload.matriculaDisciplina = `${payload.matriculaDisciplina || ''} | META:{"cId":"${payload.cursoIdFake}"}`
+            delete payload.cursoIdFake;
+        } else if (tipo === 'disciplinas') {
+            delete payload.cursoIdFake;
+        }
+
+        const fallbackId = item?.id || item?.idProfessor || item?.idDisciplina || item?.idCurso || item?.idSala || item?.idPeriodo;
+        if (isEdit) payload.id = fallbackId;
         onSave(payload)
     }
 
@@ -108,6 +135,13 @@ const ItemModal = ({ tipo, item, onSave, onClose }) => {
                                     <option value="">Selecione...</option>
                                     {field.options.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
                                 </select>
+                            ) : field.type === 'dynamic-select' ? (
+                                <select className={inp} value={data[field.front]} onChange={e => set(field.front, e.target.value)}>
+                                    <option value="">Selecione o curso (Opcional)</option>
+                                    {(lists[field.listName] || []).map(o => (
+                                        <option key={o.id || o.idCurso} value={String(o.id || o.idCurso)}>{o.nomeCurso || o.siglaCurso}</option>
+                                    ))}
+                                </select>
                             ) : field.type === 'color' ? (
                                 <div className="flex items-center gap-3 border border-gray-200 rounded-xl p-3 bg-gray-50">
                                     <input type="color" className="h-9 w-14 cursor-pointer rounded-lg border-0 bg-transparent"
@@ -137,33 +171,27 @@ const ItemModal = ({ tipo, item, onSave, onClose }) => {
     )
 }
 
-// ─── Componente principal ─────────────────────────────────────────────
+// ─── Componente principal ─────────────────────────────────────────────────────
 const DataManager = ({ onReturnToHorarios }) => {
     const { professores, disciplinas, cursos, salas, periodos, recarregarDados } = useSchedule()
     const [activeTab, setActiveTab] = useState('professores')
     const [modal, setModal] = useState(null)
 
-    // Verifica se veio do ScheduleForm (tem rascunho salvo)
     const hasDraft = !!sessionStorage.getItem('scheduleFormDraft')
     const [showResumeBanner, setShowResumeBanner] = useState(false)
 
     useEffect(() => {
-        // Verifica aba solicitada pelo redirecionamento
         const tab = sessionStorage.getItem('cadastrosTab')
         if (tab && CONFIG[tab]) {
             setActiveTab(tab)
             sessionStorage.removeItem('cadastrosTab')
-            // Abre o modal automaticamente
             setTimeout(() => setModal({ tipo: tab, item: null }), 100)
         }
     }, [])
 
-    // Quando modal fecha, se tinha rascunho, mostra banner
     const handleModalClose = () => {
         setModal(null)
-        if (hasDraft) {
-            setShowResumeBanner(true)
-        }
+        if (hasDraft) setShowResumeBanner(true)
     }
 
     const handleModalSave = async (payload) => {
@@ -175,11 +203,8 @@ const DataManager = ({ onReturnToHorarios }) => {
                 await api.post(`/${cfg.endpoint}/`, payload)
             }
             recarregarDados()
-            // Fecha modal e verifica se deve mostrar banner
             setModal(null)
-            if (hasDraft) {
-                setShowResumeBanner(true)
-            }
+            if (hasDraft) setShowResumeBanner(true)
         } catch (err) {
             alert(err.response?.data?.message || 'Erro ao salvar. Verifique os dados.')
         }
@@ -208,12 +233,14 @@ const DataManager = ({ onReturnToHorarios }) => {
     }
 
     const lists = { professores, disciplinas, cursos, salas, periodos }
+    const allTabs = Object.entries(CONFIG).map(([key, c]) => ({ key, ...c }))
+    const currentTab = allTabs.find(t => t.key === activeTab)
     const cfg = CONFIG[activeTab]
-    const list = lists[activeTab]
+    const list = cfg ? lists[activeTab] : []
 
     return (
         <div>
-            {/* ── Banner "Continuar onde parou" ── */}
+            {/* ── Banner continuar horário ── */}
             {showResumeBanner && (
                 <div className="mb-5 flex items-center justify-between gap-4 px-5 py-4 rounded-xl border"
                     style={{
@@ -257,39 +284,43 @@ const DataManager = ({ onReturnToHorarios }) => {
                             <h3 className="text-base font-black text-gray-900">Gerenciar Cadastros</h3>
                             <p className="text-xs text-gray-400 mt-0.5">Adicione, edite ou remova dados do sistema</p>
                         </div>
-                        <button onClick={() => setModal({ tipo: activeTab, item: null })}
+                        <button
+                            onClick={() => setModal({ tipo: activeTab, item: null })}
                             className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-xs font-bold hover:opacity-90 transition-all hover:-translate-y-0.5"
                             style={{
-                                background: `linear-gradient(135deg, ${cfg.color}, ${cfg.color}cc)`,
-                                boxShadow: `0 4px 12px ${cfg.color}35`
+                                background: `linear-gradient(135deg, ${currentTab?.color}, ${currentTab?.color}cc)`,
+                                boxShadow: `0 4px 12px ${currentTab?.color}35`
                             }}>
                             <Plus size={14} />
-                            Novo(a) {cfg.singular}
+                            Novo(a) {currentTab?.singular}
                         </button>
                     </div>
 
                     {/* Abas */}
-                    <div className="flex gap-1 overflow-x-auto">
-                        {Object.entries(CONFIG).map(([key, c]) => {
-                            const Icon = c.icon
-                            const active = activeTab === key
+                    <div className="flex gap-1 overflow-x-auto pb-0.5">
+                        {allTabs.map(tab => {
+                            const Icon = tab.icon
+                            const active = activeTab === tab.key
+                            const count = lists[tab.key]?.length
                             return (
-                                <button key={key} onClick={() => setActiveTab(key)}
+                                <button key={tab.key} onClick={() => setActiveTab(tab.key)}
                                     className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap"
-                                    style={active ? { background: c.colorBg, color: c.color } : { color: '#9ca3af' }}>
+                                    style={active ? { background: tab.colorBg, color: tab.color } : { color: '#9ca3af' }}>
                                     <Icon size={12} />
-                                    {c.title}
-                                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black"
-                                        style={{ background: active ? c.color + '25' : '#f3f4f6', color: active ? c.color : '#9ca3af' }}>
-                                        {lists[key].length}
-                                    </span>
+                                    {tab.title}
+                                    {count !== undefined && (
+                                        <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black"
+                                            style={{ background: active ? tab.color + '25' : '#f3f4f6', color: active ? tab.color : '#9ca3af' }}>
+                                            {count}
+                                        </span>
+                                    )}
                                 </button>
                             )
                         })}
                     </div>
                 </div>
 
-                {/* Lista */}
+                {/* ── Conteúdo da aba ── */}
                 <div className="bg-white">
                     {list.length === 0 ? (
                         <div className="text-center py-14 px-6">
@@ -306,52 +337,70 @@ const DataManager = ({ onReturnToHorarios }) => {
                         </div>
                     ) : (
                         <div className="divide-y divide-gray-50 max-h-72 overflow-y-auto">
-                            {list.map(item => (
-                                <div key={item.id}
-                                    className="flex items-center justify-between px-6 py-3.5 hover:bg-gray-50 transition-colors group">
-                                    <div className="flex items-center gap-3 min-w-0">
-                                        {item.cor ? (
-                                            <div className="w-3 h-3 rounded-full shrink-0 shadow-sm" style={{ background: item.cor }} />
-                                        ) : (
-                                            <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: cfg.colorBg }}>
-                                                <cfg.icon size={13} style={{ color: cfg.color }} />
+                            {list.map(item => {
+                                // Evita exibir o código secreto de disciplina no grid
+                                let hiddenSigla = item.sigla || item.matriculaDisciplina || item.matricula || '';
+                                if (typeof hiddenSigla === 'string' && hiddenSigla.includes('| META:')) {
+                                    hiddenSigla = hiddenSigla.split('| META:')[0].trim();
+                                }
+                                const fallbackId = item.id || item.idProfessor || item.idDisciplina || item.idCurso || item.idSala || item.idPeriodo;
+
+                                return (
+                                    <div key={fallbackId}
+                                        className="flex items-center justify-between px-6 py-3.5 hover:bg-gray-50 transition-colors group">
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            {item.cor ? (
+                                                <div className="w-3 h-3 rounded-full shrink-0 shadow-sm" style={{ background: item.cor }} />
+                                            ) : (
+                                                <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: cfg.colorBg }}>
+                                                    <cfg.icon size={13} style={{ color: cfg.color }} />
+                                                </div>
+                                            )}
+                                            <div className="min-w-0">
+                                                <p className="text-sm font-semibold text-gray-800 truncate">
+                                                    {item[cfg.labelKey] || item.semestre || 'Sem nome'}
+                                                </p>
+                                                {item.email    && <p className="text-xs text-gray-400 truncate">{item.email}</p>}
+                                                {hiddenSigla   && <p className="text-xs text-gray-400">{hiddenSigla}</p>}
+                                                {item.tipo     && <p className="text-xs text-gray-400 capitalize">{item.tipo}</p>}
+                                                {item.descricao && activeTab === 'periodos' && <p className="text-xs text-gray-400 truncate">{item.descricao}</p>}
                                             </div>
-                                        )}
-                                        <div className="min-w-0">
-                                            <p className="text-sm font-semibold text-gray-800 truncate">
-                                                {item[cfg.labelKey] || item.semestre || 'Sem nome'}
-                                            </p>
-                                            {item.email    && <p className="text-xs text-gray-400 truncate">{item.email}</p>}
-                                            {item.sigla    && <p className="text-xs text-gray-400">{item.sigla}</p>}
-                                            {item.tipo     && <p className="text-xs text-gray-400 capitalize">{item.tipo}</p>}
-                                            {item.descricao && activeTab === 'periodos' && <p className="text-xs text-gray-400 truncate">{item.descricao}</p>}
+                                        </div>
+                                        <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-4">
+                                            <button onClick={() => setModal({ tipo: activeTab, item })}
+                                                className="w-7 h-7 flex items-center justify-center rounded-lg transition-all hover:scale-110"
+                                                style={{ background: '#dbeafe', color: '#1d4ed8' }}>
+                                                <Edit2 size={12} />
+                                            </button>
+                                            <button onClick={() => handleDelete(fallbackId)}
+                                                className="w-7 h-7 flex items-center justify-center rounded-lg transition-all hover:scale-110"
+                                                style={{ background: '#fee2e2', color: '#dc2626' }}>
+                                                <Trash2 size={12} />
+                                            </button>
                                         </div>
                                     </div>
-                                    <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-4">
-                                        <button onClick={() => setModal({ tipo: activeTab, item })}
-                                            className="w-7 h-7 flex items-center justify-center rounded-lg transition-all hover:scale-110"
-                                            style={{ background: '#dbeafe', color: '#1d4ed8' }}>
-                                            <Edit2 size={12} />
-                                        </button>
-                                        <button onClick={() => handleDelete(item.id)}
-                                            className="w-7 h-7 flex items-center justify-center rounded-lg transition-all hover:scale-110"
-                                            style={{ background: '#fee2e2', color: '#dc2626' }}>
-                                            <Trash2 size={12} />
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
+                                )
+                            })}
                         </div>
                     )}
                 </div>
             </div>
 
+            {/* Modal genérico */}
             {modal && (
-                <ItemModal tipo={modal.tipo} item={modal.item}
-                    onSave={handleModalSave} onClose={handleModalClose} />
+                <ItemModal 
+                    tipo={modal.tipo} 
+                    item={modal.item}
+                    lists={lists} 
+                    onSave={handleModalSave} 
+                    onClose={handleModalClose} 
+                />
             )}
 
-            <style>{`@keyframes fadeInDown{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}`}</style>
+            <style>{`
+                @keyframes fadeInDown{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+                @keyframes fadeInUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+            `}</style>
         </div>
     )
 }

@@ -391,7 +391,7 @@ const Login = ({ onLoginSuccess }) => {
                                             <option value="">Selecione o Curso</option>
                                             {cursosDisponiveis.map(c => (
                                                 <option key={c.id || c.idCurso} value={c.id || c.idCurso}>
-                                                    {c.nome}
+                                                    {c.nomeCurso}
                                                 </option>
                                             ))}
                                         </select>
@@ -413,7 +413,7 @@ const Login = ({ onLoginSuccess }) => {
                                             <option value="">Selecione o Curso</option>
                                             {cursosDisponiveis.map(c => (
                                                 <option key={c.id || c.idCurso} value={c.id || c.idCurso}>
-                                                    {c.nome}
+                                                    {c.nomeCurso}
                                                 </option>
                                             ))}
                                         </select>
