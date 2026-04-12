@@ -16,6 +16,7 @@ from app.services.google_calendar import list_events, create_event, update_event
 from app.services.datetime_utils import ensure_utc, from_storage_datetime, to_storage_datetime
 from app.schemas.reservation import ReservationCreate, ReservationUpdate
 from app.services.base_service import BaseService
+from app.services.rbac import ROLE_ADMIN
 
 class AllocationService(BaseService[Alocacao]):
     def __init__(self):
@@ -49,11 +50,9 @@ class AllocationService(BaseService[Alocacao]):
         date_to: Optional[datetime] = None,
         status_filter: Optional[str] = None,
     ) -> dict:
-        # Padrões de data se não fornecidos
         date_from = date_from or datetime(2000, 1, 1)
         date_to = date_to or datetime(2100, 1, 1)
         
-        from app.services.rbac import ROLE_ADMIN
         is_admin = (current_user.tipo_usuario >= ROLE_ADMIN)
         
         date_from_local = to_storage_datetime(date_from)
@@ -87,23 +86,17 @@ class AllocationService(BaseService[Alocacao]):
         if not room:
             raise HTTPException(status_code=404, detail="Sala não encontrada.")
 
-        from app.services.rbac import ROLE_ADMIN
-        # Se não for admin, status é sempre PENDING
         if current_user.tipo_usuario < ROLE_ADMIN:
             payload.status = "PENDING"
         elif not payload.status:
             payload.status = "APPROVED"
 
-        # Salvar no Banco Local primeiro (para pegar ID e novos campos)
         try:
             data = payload.model_dump()
-            # Adicionar campos extras que o BaseService.create não pegaria se não estivessem no schema base
-            # mas agora estão.
             nova = self.repository.create(db, data)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Falha ao salvar no Banco Local: {e}")
 
-        # Se já aprovado, sincronizar com Google
         if nova.status == "APPROVED":
             self._sync_google_create(db, nova, current_user, room)
 
@@ -114,7 +107,6 @@ class AllocationService(BaseService[Alocacao]):
         end_dt = ensure_utc(alocacao.dia_horario_saida)
 
         if self._conflicts_google(db, current_user.id, alocacao.fk_sala, start_dt, end_dt):
-            # Se conflitar no Google, podemos marcar como PENDING ou erro
             raise HTTPException(status_code=409, detail="Conflito detectado no Google Calendar.")
 
         extended_props = {
@@ -131,7 +123,6 @@ class AllocationService(BaseService[Alocacao]):
 
         applicant = db.query(Usuario).filter(Usuario.id == alocacao.fk_usuario).first()
         attendees = [applicant.email] if applicant and applicant.email else []
-
         create_event(
             db=db,
             user_id=current_user.id,
@@ -144,6 +135,23 @@ class AllocationService(BaseService[Alocacao]):
             recurrence_rule=alocacao.recurrency,
             attendees=attendees,
         )
+
+    def _sync_google_delete(self, db: Session, alocacao: Alocacao, current_user):
+        """
+        Busca o evento no Google Calendar pelo ID local e o remove.
+        """
+        start_dt = ensure_utc(alocacao.dia_horario_inicio)
+        end_dt = ensure_utc(alocacao.dia_horario_saida)
+        
+        events = list_events(db, current_user.id, start_dt, end_dt)
+        if not events:
+            return
+
+        for ev in events:
+            priv = (ev.get("extendedProperties") or {}).get("private") or {}
+            if str(priv.get("local_reservation_id")) == str(alocacao.id):
+                delete_event(db, current_user.id, ev["id"])
+                print(f"DEBUG: Evento Google {ev['id']} removido para alocação {alocacao.id}")
 
     def approve_reservation(self, db: Session, reservation_id: int, current_user) -> dict:
         alocacao = self.repository.get_by_id(db, reservation_id)
@@ -165,17 +173,17 @@ class AllocationService(BaseService[Alocacao]):
         return {"message": "Reserva rejeitada."}
 
     def delete_reservation(self, db: Session, reservation_id: str, delete_series: bool, current_user) -> None:
-        # Lógica de delete simplificada usando o novo repositório
         base_id_str = reservation_id.split(":")[0]
         if base_id_str.isdigit():
             lid = int(base_id_str)
             alocacao = self.repository.get_by_id(db, lid)
             if alocacao:
-                # Sincronizar delete no Google se aprovada
                 if alocacao.status == "APPROVED":
-                    # (Lógica de busca e delete no Google omitida por brevidade, 
-                    # mas o conceito é o mesmo do service anterior)
-                    pass
+                    try:
+                        self._sync_google_delete(db, alocacao, current_user)
+                    except Exception as e:
+                        print(f"Erro ao sincronizar exclusão com Google: {e}")
+                
                 self.repository.delete(db, lid)
 
 allocation_service = AllocationService()

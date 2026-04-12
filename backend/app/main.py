@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI
 from starlette.middleware.sessions import SessionMiddleware
 from app.config import get_settings
@@ -9,6 +10,8 @@ from app.routers import (
     room_types, dashboard, professors, disciplines, 
     courses, reports, periods, solicitations
 )
+
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -28,10 +31,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.add_middleware(SessionMiddleware, secret_key=settings.JWT_SECRET)
+app.add_middleware(
+    SessionMiddleware, 
+    secret_key=settings.JWT_SECRET,
+    session_cookie="sigre_session",
+    same_site="lax",
+    https_only=False,
+    max_age=3600
+)
 
-# app.include_router(usuario.router) - Removido em favor de /auth unificado
-app.include_router(solicitations.router) # Nova rota
+app.include_router(solicitations.router)
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(rooms.router)

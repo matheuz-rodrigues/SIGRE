@@ -50,13 +50,11 @@ def google_connect(
     request.session["oauth_state"] = state
     request.session["oauth_user_id"] = current.id  
     
-    if settings.ENV == "development":
-        return {
-            "detail": "Modo DEV: Copie esta URL e cole no seu navegador.",
-            "auth_url": auth_url
-        }
+    print(f"DEBUG: Session set in /connect - state: {state}, user_id: {current.id}")
     
-    return RedirectResponse(auth_url, status_code=302)
+    return {
+        "auth_url": auth_url
+    }
 
 
 @router.get("/callback")
@@ -72,6 +70,8 @@ def google_callback(
     
     state_from_session = request.session.get("oauth_state")
     user_id_from_session = request.session.get("oauth_user_id")
+
+    print(f"DEBUG: Session in /callback - state_session: {state_from_session}, state_google: {state_from_google}, user_id: {user_id_from_session}")
 
     if not state_from_session or not user_id_from_session:
         raise HTTPException(status_code=400, detail="Sessão inválida ou ID de usuário faltando")
@@ -118,7 +118,7 @@ def google_callback(
     
     db.commit()
     
-    frontend_url = "http://localhost:5173/configuracoes"
+    frontend_url = f"{settings.FRONTEND_URL}?tab=configuracoes"
     return RedirectResponse(url=frontend_url)
 
 
@@ -129,3 +129,13 @@ def google_status(db: Session = Depends(get_db), current=Depends(get_current_use
     """
     row: Optional[GoogleCredential] = db.query(GoogleCredential).filter(GoogleCredential.user_id == current.id).first()
     return {"connected": bool(row and row.access_token)}
+
+
+@router.delete("/disconnect")
+def google_disconnect(db: Session = Depends(get_db), current=Depends(get_current_user)):
+    """
+    Remove a conexão com o Google Calendar do usuário.
+    """
+    db.query(GoogleCredential).filter(GoogleCredential.user_id == current.id).delete()
+    db.commit()
+    return {"status": "Disconnected successfully"}
