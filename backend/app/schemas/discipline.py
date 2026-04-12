@@ -6,16 +6,25 @@ class DisciplineBase(BaseModel):
     matriculaDisciplina: Optional[str] = Field(None, validation_alias=AliasChoices("matriculaDisciplina", "codigo"), serialization_alias="matriculaDisciplina")
 
 class DisciplineCreate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     nomeDisciplina: str
     matriculaDisciplina: Optional[str] = None
+    cursoId: Optional[int] = Field(None, validation_alias=AliasChoices("cursoId", "fk_curso"))
+
 
 class DisciplineUpdate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     nomeDisciplina: Optional[str] = None
     matriculaDisciplina: Optional[str] = None
+    cursoId: Optional[int] = Field(None, validation_alias=AliasChoices("cursoId", "fk_curso"))
+
 
 class DisciplineOut(DisciplineBase):
     id: int
-    
+    cursoId: Optional[int] = Field(default=None, validation_alias=AliasChoices("cursoId", "fk_curso"))
+
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     @computed_field
