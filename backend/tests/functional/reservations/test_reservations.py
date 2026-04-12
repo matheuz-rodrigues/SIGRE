@@ -66,6 +66,55 @@ def test_list_reservations_unauthorized(client):
     response = client.get("/reservations/")
     assert response.status_code == 401
 
+
+def test_update_reservation(client, admin_token_headers, db_session, test_admin_user):
+    room = db_session.query(Sala).first()
+    start_time = datetime.now() + timedelta(days=2)
+    end_time = start_time + timedelta(hours=2)
+    res = Alocacao(
+        fk_usuario=test_admin_user.id,
+        fk_sala=room.id,
+        tipo="Aula",
+        dia_horario_inicio=start_time,
+        dia_horario_saida=end_time,
+        status="PENDING",
+    )
+    db_session.add(res)
+    db_session.commit()
+    db_session.refresh(res)
+
+    new_end = end_time + timedelta(hours=1)
+    response = client.patch(
+        f"/reservations/{res.id}",
+        json={"uso": "Atualizado", "dia_horario_saida": new_end.isoformat()},
+        headers=admin_token_headers,
+    )
+    assert response.status_code == 200
+    assert response.json().get("summary") == "Atualizado"
+    db_session.refresh(res)
+    assert res.uso == "Atualizado"
+
+
+def test_update_reservation_unauthorized(client, db_session, test_admin_user):
+    room = db_session.query(Sala).first()
+    res = db_session.query(Alocacao).first()
+    if not res:
+        start_time = datetime.now() + timedelta(days=3)
+        res = Alocacao(
+            fk_usuario=test_admin_user.id,
+            fk_sala=room.id,
+            tipo="Aula",
+            dia_horario_inicio=start_time,
+            dia_horario_saida=start_time + timedelta(hours=1),
+            status="PENDING",
+        )
+        db_session.add(res)
+        db_session.commit()
+        db_session.refresh(res)
+    response = client.patch(f"/reservations/{res.id}", json={"uso": "Hack"})
+    assert response.status_code == 401
+
+
 def test_approve_reservation(client, admin_token_headers, db_session):
     res = db_session.query(Alocacao).filter(Alocacao.status == "PENDING").first()
     assert res is not None

@@ -24,6 +24,7 @@ class Solicitacao(Base):
     
     fk_sala = Column(Integer, ForeignKey("salas.id"), nullable=False)
     fk_curso = Column(Integer, ForeignKey("cursos.id"), nullable=True)
+    fk_alocacao = Column(Integer, ForeignKey("alocacao.id", ondelete="SET NULL"), nullable=True)
     status = Column(String(20), server_default="pendente") # pendente, aprovado, recusado
     motivo_recusa = Column(Text, nullable=True)
     
@@ -33,6 +34,7 @@ class Solicitacao(Base):
     # Relacionamentos
     sala = relationship("Sala")
     curso_rel = relationship("Curso")
+    alocacao = relationship("Alocacao", foreign_keys=[fk_alocacao])
 
     @property
     def curso(self):

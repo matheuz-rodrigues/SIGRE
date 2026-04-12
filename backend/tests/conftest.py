@@ -93,7 +93,9 @@ def rollback_after_test(db_session):
 
 @pytest.fixture(autouse=True)
 def mock_google_calendar():
-    with patch("app.services.google_calendar.list_events", return_value=[]), \
+    fake_creds = MagicMock()
+    with patch("app.services.google_calendar._get_credentials", return_value=fake_creds), \
+         patch("app.services.google_calendar.list_events", return_value=[]), \
          patch("app.services.google_calendar.create_event", return_value={"id": "mock_event_id"}), \
          patch("app.services.google_calendar.update_event", return_value={"id": "mock_event_id"}), \
          patch("app.services.google_calendar.delete_event", return_value=True):

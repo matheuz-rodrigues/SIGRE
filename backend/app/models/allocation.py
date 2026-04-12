@@ -27,6 +27,7 @@ class Alocacao(Base):
     oficio = Column(String(255))
     recurrency = Column(String, nullable=True)
     status = Column(String(20), default="PENDING", nullable=False)
+    google_event_id = Column(String(255), nullable=True)
 
     # Relacionamentos
     usuario = relationship("Usuario")

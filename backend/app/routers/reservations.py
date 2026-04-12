@@ -45,6 +45,17 @@ def create_reservation(
 ):
     return allocation_service.create_reservation(db, payload, current_user)
 
+
+@router.patch("/{reservation_id}", response_model=dict)
+def update_reservation(
+    reservation_id: str,
+    payload: ReservationUpdate,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_role(ROLE_USER)),
+):
+    return allocation_service.update_reservation(db, reservation_id, payload, current_user)
+
+
 @router.patch("/approve/{reservation_id}")
 def approve_reservation(
     reservation_id: int,

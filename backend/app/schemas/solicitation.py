@@ -32,6 +32,7 @@ class SolicitationOut(SolicitationBase):
     status: str
     motivoRecusa: Optional[str] = Field(None, validation_alias=AliasChoices("motivoRecusa", "motivo_recusa"), serialization_alias="motivoRecusa")
     criadoEm: datetime = Field(..., validation_alias=AliasChoices("criadoEm", "created_at"), serialization_alias="criadoEm")
+    fk_alocacao: Optional[int] = Field(None, serialization_alias="alocacaoId")
     sala: Optional[RoomOut] = None
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)

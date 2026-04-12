@@ -2,9 +2,11 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
 from app.models.solicitation import Solicitacao
+from app.models.user import Usuario
 from app.repositories.solicitation_repository import solicitation_repository
 from app.schemas.solicitation import SolicitationCreate, SolicitationUpdateStatus
 from app.services.base_service import BaseService
+from app.services.reservation_service import allocation_service
 
 class SolicitationService(BaseService[Solicitacao]):
     def __init__(self):
@@ -39,15 +41,28 @@ class SolicitationService(BaseService[Solicitacao]):
     def list_my_solicitations(self, db: Session, email: str) -> List[Solicitacao]:
         return self.repository.list_by_email(db, email)
 
-    def update_status(self, db: Session, id: int, payload: SolicitationUpdateStatus) -> Solicitacao:
+    def update_status(self, db: Session, id: int, payload: SolicitationUpdateStatus, admin_user: Usuario) -> Solicitacao:
         solicitacao = self.repository.get_by_id(db, id)
         if not solicitacao:
             raise HTTPException(status_code=404, detail="Solicitação não encontrada")
-        
-        update_data = {"status": payload.status}
-        if payload.motivoRecusa:
+
+        status_new = (payload.status or "").strip().lower()
+
+        if status_new == "aprovado":
+            if (solicitacao.status or "").lower() != "pendente":
+                raise HTTPException(status_code=400, detail="Só é possível aprovar solicitações pendentes.")
+            if getattr(solicitacao, "fk_alocacao", None):
+                raise HTTPException(status_code=400, detail="Esta solicitação já foi convertida em alocação.")
+            aloc_id = allocation_service.create_allocation_from_approved_solicitation(
+                db, solicitacao, admin_user
+            )
+            return self.repository.update(
+                db, solicitacao, {"status": "aprovado", "fk_alocacao": aloc_id}
+            )
+
+        update_data: dict = {"status": status_new}
+        if payload.motivoRecusa is not None:
             update_data["motivo_recusa"] = payload.motivoRecusa
-            
         return self.repository.update(db, solicitacao, update_data)
 
 solicitation_service = SolicitationService()
