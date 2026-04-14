@@ -10,6 +10,7 @@ class Settings(BaseSettings):
 	HOST: str = "0.0.0.0"
 	PORT: int = 8000
 	APP_TIMEZONE: str = "America/Belem"
+	FRONTEND_URL: str = "http://localhost:8080"
 
 	DATABASE_URL: str = "postgresql://user:password@localhost:5432/alocacoes"
 
@@ -20,7 +21,6 @@ class Settings(BaseSettings):
 	GOOGLE_CLIENT_ID: str = ""
 	GOOGLE_CLIENT_SECRET: str = ""
 	GOOGLE_REDIRECT_URI: str = "http://localhost:8000/google/callback"
-	GOOGLE_CALENDAR_ID: str = "primary"
 	GOOGLE_TOKEN_URI: str = "https://oauth2.googleapis.com/token"
 
 	# Lista de tipos de sala configuráveis (ex.: ["laboratorio","auditorio"])

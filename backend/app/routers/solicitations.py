@@ -4,6 +4,7 @@ from typing import List
 from app.try_database import get_db
 from app.schemas.solicitation import SolicitationCreate, SolicitationOut, SolicitationUpdateStatus
 from app.services.solicitation_service import solicitation_service
+from app.services.rbac import get_current_user
 
 router = APIRouter(prefix="/solicitations", tags=["solicitations"])
 
@@ -17,10 +18,16 @@ def list_mine(email: str = Query(...), db: Session = Depends(get_db)):
     """Lista as solicitações de um usuário específico via e-mail."""
     return solicitation_service.list_my_solicitations(db, email)
 
+
 @router.patch("/{id}/status", response_model=SolicitationOut)
-def update_status(id: int, payload: SolicitationUpdateStatus, db: Session = Depends(get_db)):
+def update_status(
+    id: int, 
+    payload: SolicitationUpdateStatus, 
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
     """Atualiza o status de uma solicitação (Aprovar/Recusar)."""
-    return solicitation_service.update_status(db, id, payload)
+    return solicitation_service.update_status(db, id, payload, current_user)
 
 @router.get("/", response_model=List[SolicitationOut])
 def list_all(status: str = None, db: Session = Depends(get_db)):
