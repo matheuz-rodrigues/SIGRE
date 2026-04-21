@@ -14,7 +14,7 @@ from app.models.solicitation import Solicitacao
 from app.repositories.allocation_repository import allocation_repository
 from app.builders.reservation_builder import build_local_event, expand_local_reservation, PLATFORM_EVENT_SOURCE
 from app.services import google_calendar
-from app.services.datetime_utils import ensure_utc, ensure_app_timezone, from_storage_datetime, to_storage_datetime
+from app.services.datetime_utils import ensure_utc, ensure_app_timezone, from_storage_datetime, to_storage_datetime, APP_TIMEZONE_NAME
 from app.schemas.reservation import ReservationCreate, ReservationUpdate
 from app.services.base_service import BaseService
 from app.services.rbac import ROLE_ADMIN
@@ -360,14 +360,16 @@ class AllocationService(BaseService[Alocacao]):
         return {"message": "Data removida da série com sucesso."}
 
     def _exclude_date_from_parent(self, db: Session, parent: Alocacao, dt: datetime):
-        """Atualiza a string de recorrência para incluir um EXDATE."""
-        exdate_str = dt.strftime("%Y%m%dT%H%M%S")
+        """Atualiza a string de recorrência para incluir um EXDATE em UTC."""
+        from app.services.datetime_utils import ensure_app_timezone
+        dt_local = ensure_app_timezone(dt)
+        exdate_str = dt_local.strftime("%Y%m%dT%H%M%S")
         
         current_rec = parent.recurrency or ""
         if not current_rec.startswith("RRULE:"):
              current_rec = f"RRULE:{current_rec}"
              
-        # Adiciona EXDATE (formato iCal simples)
+        # Adiciona EXDATE com terminologia nativa ingênua que fecha perfeito com o parser de exclusão
         new_rec = f"{current_rec}\nEXDATE:{exdate_str}"
         self.repository.update(db, parent, {"recurrency": new_rec})
 

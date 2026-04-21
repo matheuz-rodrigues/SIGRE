@@ -89,8 +89,30 @@ def expand_local_reservation(
             return []
         return [build_local_event(reservation, start_dt, end_dt)]
 
+    recurrency_str = reservation.recurrency
+    
+    from app.services.datetime_utils import APP_TIMEZONE, ensure_app_timezone
+    
+    # 1. Garante que range e dtstart originais estão corretos
+    start_dt = ensure_app_timezone(start_dt)
+    end_dt = ensure_app_timezone(end_dt)
+    range_start = ensure_app_timezone(range_start)
+    range_end = ensure_app_timezone(range_end)
+
+    # 2. Transforma tudo em NAIVE para o python-dateutil não engasgar
+    start_dt_naive = start_dt.replace(tzinfo=None)
+    range_start_naive = range_start.replace(tzinfo=None)
+    range_end_naive = range_end.replace(tzinfo=None)
+
+    # 3. Limpa TZID ou marcações "Z" antigas para forçar o dateutil a ler as exclusões como naive também
+    import re
+    safe_recurrency_str = re.sub(r';TZID=[^:]+:', ':', recurrency_str)
+    safe_recurrency_str = safe_recurrency_str.replace('Z\n', '\n')
+    if safe_recurrency_str.endswith('Z'):
+        safe_recurrency_str = safe_recurrency_str[:-1]
+
     try:
-        recurrence = rrulestr(reservation.recurrency, dtstart=start_dt)
+        recurrence = rrulestr(safe_recurrency_str, dtstart=start_dt_naive)
     except Exception as exc:
         print(f"Erro ao expandir recorrência local {reservation.id}: {exc}")
         if end_dt < range_start or start_dt > range_end:
@@ -99,9 +121,17 @@ def expand_local_reservation(
 
     duration = end_dt - start_dt
     events = []
-    for occurrence_start in recurrence.between(range_start, range_end, inc=True):
-        occurrence_end = occurrence_start + duration
-        instance_id = f"{reservation.id}:{occurrence_start.isoformat()}"
-        events.append(build_local_event(reservation, occurrence_start, occurrence_end, instance_id))
+    try:
+        # A iteração agora é estritamente naive (sem fuso), evitando "can't compare offset-naive and offset-aware"
+        for occurrence_start_naive in recurrence.between(range_start_naive, range_end_naive, inc=True):
+            # 4. Devolve o fuso horário para a ocorrência validada
+            occurrence_start = occurrence_start_naive.replace(tzinfo=APP_TIMEZONE)
+            occurrence_end = occurrence_start + duration
+            instance_id = f"{reservation.id}:{occurrence_start.isoformat()}"
+            events.append(build_local_event(reservation, occurrence_start, occurrence_end, instance_id))
+    except Exception as exc:
+        print(f"Erro na iteração da recorrência {reservation.id}: {exc}")
+        if not (end_dt < range_start or start_dt > range_end):
+             events.append(build_local_event(reservation, start_dt, end_dt))
 
     return events

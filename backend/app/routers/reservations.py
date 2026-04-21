@@ -58,7 +58,7 @@ def update_reservation(
 
 @router.patch("/approve/{reservation_id}")
 def approve_reservation(
-    reservation_id: int,
+    reservation_id: str,
     db: Session = Depends(get_db),
     current_user = Depends(require_role(ROLE_ADMIN))
 ):
@@ -66,7 +66,7 @@ def approve_reservation(
 
 @router.patch("/refuse/{reservation_id}")
 def refuse_reservation(
-    reservation_id: int,
+    reservation_id: str,
     db: Session = Depends(get_db),
     current_user = Depends(require_role(ROLE_ADMIN))
 ):
