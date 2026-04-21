@@ -1,4 +1,5 @@
 import api from './api'
+import { setCookie, getCookie, deleteCookie } from '../utils/cookieUtils'
 
 const ROLE_BY_TIPO = { 1: 'aluno', 2: 'professor', 3: 'admin' }
 
@@ -15,23 +16,23 @@ export const fetchCurrentUser = async () => {
  */
 export const applyUserProfile = (me) => {
   if (!me) return
-  localStorage.setItem('userName', me.nome ?? '')
-  localStorage.setItem('userEmail', me.email ?? '')
-  localStorage.setItem('userId', String(me.id ?? ''))
+  setCookie('userName', me.nome ?? '')
+  setCookie('userEmail', me.email ?? '')
+  setCookie('userId', String(me.id ?? ''))
   const papel = me.papel ?? ROLE_BY_TIPO[me.tipo_usuario] ?? 'aluno'
-  localStorage.setItem('userRole', papel)
+  setCookie('userRole', papel)
   if (papel === 'admin') {
-    localStorage.setItem('isAdminAuthenticated', 'true')
+    setCookie('isAdminAuthenticated', 'true')
   }
-  localStorage.setItem('adminUser', me.nome ?? 'Admin')
+  setCookie('adminUser', me.nome ?? 'Admin')
 
   const mat = me.matricula != null && String(me.matricula).trim() !== '' ? String(me.matricula).trim() : ''
-  if (mat) localStorage.setItem('userMatricula', mat)
-  else localStorage.removeItem('userMatricula')
+  if (mat) setCookie('userMatricula', mat)
+  else deleteCookie('userMatricula')
 
   const sia = me.siape != null && String(me.siape).trim() !== '' ? String(me.siape).trim() : ''
-  if (sia) localStorage.setItem('userSiape', sia)
-  else localStorage.removeItem('userSiape')
+  if (sia) setCookie('userSiape', sia)
+  else deleteCookie('userSiape')
 }
 
 /**
@@ -59,14 +60,14 @@ export const register = async (dados) => {
  * Salva os dados do usuário no localStorage após login bem-sucedido
  */
 export const saveSession = (userData) => {
-  localStorage.setItem('access_token', userData.access_token)
-  localStorage.setItem('userRole',     userData.papel)
-  localStorage.setItem('userName',     userData.nome)
-  localStorage.setItem('userEmail',    userData.email)
-  localStorage.setItem('userId',       userData.id)
+  setCookie('access_token', userData.access_token)
+  setCookie('userRole',     userData.papel)
+  setCookie('userName',     userData.nome)
+  setCookie('userEmail',    userData.email)
+  setCookie('userId',       userData.id)
   
   if (userData.papel === 'admin') {
-    localStorage.setItem('isAdminAuthenticated', 'true')
+    setCookie('isAdminAuthenticated', 'true')
   }
 }
 
@@ -74,13 +75,20 @@ export const saveSession = (userData) => {
  * Remove todos os dados de sessão (logout)
  */
 export const clearSession = () => {
-  localStorage.removeItem('access_token')
-  localStorage.removeItem('userRole')
-  localStorage.removeItem('userName')
-  localStorage.removeItem('userEmail')
-  localStorage.removeItem('userId')
-  localStorage.removeItem('isAdminAuthenticated')
-  localStorage.removeItem('adminUser')
-  localStorage.removeItem('userMatricula')
-  localStorage.removeItem('userSiape')
+  deleteCookie('access_token')
+  deleteCookie('userRole')
+  deleteCookie('userName')
+  deleteCookie('userEmail')
+  deleteCookie('userId')
+  deleteCookie('isAdminAuthenticated')
+  deleteCookie('adminUser')
+  deleteCookie('userMatricula')
+  deleteCookie('userSiape')
 }
+
+export const getSessionToken = () => getCookie('access_token')
+export const getSessionRole = () => getCookie('userRole')
+export const getSessionId = () => getCookie('userId')
+export const getSessionName = () => getCookie('userName')
+export const getSessionEmail = () => getCookie('userEmail')
+export const isAdminAuth = () => getCookie('isAdminAuthenticated') === 'true'

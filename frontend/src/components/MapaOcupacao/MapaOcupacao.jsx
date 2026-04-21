@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import { MapPin, FileText, Loader2, Plus, Trash2, User } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { getCookie } from '../../utils/cookieUtils';
+import { MapPin, FileText, Loader2, User, Clock, X, CheckCircle2 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { getReservations, createReservation, deleteReservation } from '../../services/ReservationService';
+import { getReservations } from '../../services/ReservationService';
 import { getRooms }   from '../../services/RoomService';
 import { getPeriods } from '../../services/PeriodService';
 import { getCursos }  from '../../services/CouserService';
@@ -26,30 +27,27 @@ const SLOTS = [
 const WEEKDAYS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"]
 const WEEKDAY_NUM = { "Segunda": 1, "Terça": 2, "Quarta": 3, "Quinta": 4, "Sexta": 5, "Sábado": 6 }
 
-const proximaData = (diaSemana) => {
-  const hoje = new Date(); const alvo = WEEKDAY_NUM[diaSemana]
-  const diff = (alvo - hoje.getDay() + 7) % 7 || 7
-  const d = new Date(hoje); d.setDate(hoje.getDate() + diff); return d
+const timeToMinutes = (timeStr) => {
+  if (!timeStr) return 0
+  const [h, m] = timeStr.split(':').map(Number)
+  return h * 60 + m
 }
-const montarISO = (data, hora) => {
-  const d = new Date(data); const [h, m] = hora.split(':'); const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(h)}:${pad(m)}:00`
-}
-const parseSlotMinutos = (label) => {
-  const [h, m] = label.split('-')[0].split(':').map(Number); return h * 60 + m
+
+const parseSlotRange = (label) => {
+  const [start, end] = label.split('-')
+  return { start: timeToMinutes(start), end: timeToMinutes(end) }
 }
 
 export default function MapaOcupacao() {
-  const isAdmin  = localStorage.getItem('userRole') === 'admin'
+  const userRole = getCookie('userRole')
+  const isAdmin  = userRole === 'admin'
   const [filtroCursoId, setFiltroCursoId] = useState('')
   const [filtroPeriodoId, setFiltroPeriodoId] = useState('')
   const [todasReservas, setTodasReservas] = useState([])
   const [salas, setSalas] = useState([]); const [periodos, setPeriodos] = useState([])
   const [cursos, setCursos] = useState([]); const [professores, setProfessores] = useState([])
   const [disciplinas, setDisciplinas] = useState([]); const [loading, setLoading] = useState(true)
-  const [modal, setModal] = useState(null)
-  const [form, setForm] = useState({ professorId: '', disciplinaId: '', salaId: '' })
-  const [salvando, setSalvando] = useState(false); const [erroModal, setErroModal] = useState('')
+  const [detalhesSlot, setDetalhesSlot] = useState(null)
 
   const carregar = async () => {
     setLoading(true)
@@ -58,12 +56,6 @@ export default function MapaOcupacao() {
         getReservations({ _t: Date.now() }), getRooms(), getPeriods(), getCursos(), api.get('/professors/'), api.get('/disciplines/'),
       ])
       const reservas = resRes?.items || resRes || []
-      // DEBUG — mostra a primeira reserva no console para inspecionar os campos retornados
-      if (reservas.length > 0) {
-        console.log('[MapaOcupacao] Exemplo de reserva do backend:', JSON.stringify(reservas[0], null, 2))
-      } else {
-        console.log('[MapaOcupacao] Backend retornou 0 reservas.')
-      }
       setTodasReservas(reservas)
       setSalas(resSal || []); setPeriodos(resPer || []); setCursos(resCur || [])
       setProfessores(resPro.data || []); setDisciplinas(resDis.data || [])
@@ -73,59 +65,37 @@ export default function MapaOcupacao() {
   }
   useEffect(() => { carregar() }, [])
 
-  const abrirModal = (slot, dia) => {
-    if (!isAdmin) return
-    setErroModal('')
-    setForm({ professorId: '', disciplinaId: '', salaId: '' })
-    setModal({ slot, dia })
-  }
-
-  // Extrai campos normalizados de uma reserva, cobrindo todos os nomes possíveis do backend
+  // Extrai campos normalizados de uma reserva
   const extrair = (r) => {
     const priv = r.extendedProperties?.private || {}
-
-    // Tenta extrair META da justificativa
-    let hiddenCursoId = '', hiddenPeriodoId = '', hiddenProfId = '', hiddenDiscId = ''
-    const rawJust = r.justificativa || r.description || priv.justificativa || ''
-    if (rawJust.includes('| META:')) {
-      try {
-        const meta = JSON.parse(rawJust.split('| META:')[1])
-        hiddenCursoId  = String(meta.cId   ?? '')
-        hiddenPeriodoId= String(meta.pId   ?? '')
-        hiddenProfId   = String(meta.profId?? '')
-        hiddenDiscId   = String(meta.dId   ?? '')
-      } catch(e){}
+    const cursoId = String(r.cursoId ?? r.curso_id ?? r.fk_curso ?? priv.cursoId ?? priv.fk_curso ?? '')
+    const periodoId = String(r.periodoId ?? r.periodo_id ?? r.fk_periodo ?? priv.periodoId ?? priv.fk_periodo ?? '')
+    const salaId = String(r.salaId ?? r.sala_id ?? r.salald ?? priv.salaId ?? priv.fk_sala ?? '')
+    const professorId = String(r.fk_professor ?? r.professorId ?? r.professor_id ?? priv.fk_professor ?? priv.professorId ?? '')
+    const disciplinaId = String(r.fk_disciplina ?? r.disciplinaId ?? r.disciplina_id ?? priv.fk_disciplina ?? priv.disciplinaId ?? '')
+    const inicio = r.dia_horario_inicio ?? r.dataInicio ?? r.start?.dateTime ?? r.start ?? ''
+    const diaSemana = r.diaSemana ?? r.dia_semana ?? priv.dia_semana ?? priv.diaSemana ?? ''
+    const uso = r.uso ?? r.summary ?? priv.uso ?? ''
+    const status = (r.status || 'PENDING').toLowerCase()
+    
+    // Calcular minutos de início e fim
+    let startMin = 0, endMin = 0
+    if (r.start?.dateTime) {
+      const dt = new Date(r.start.dateTime.replace('Z', ''))
+      startMin = dt.getHours() * 60 + dt.getMinutes()
+      const edt = new Date(r.end.dateTime.replace('Z', ''))
+      endMin = edt.getHours() * 60 + edt.getMinutes()
+    } else if (r.dia_horario_inicio) {
+        const dt = new Date(r.dia_horario_inicio.replace('Z', ''))
+        startMin = dt.getHours() * 60 + dt.getMinutes()
+        const edt = new Date(r.dia_horario_saida.replace('Z', ''))
+        endMin = edt.getHours() * 60 + edt.getMinutes()
     }
 
-    // cursoId — cobre todos os nomes possíveis
-    const cursoId = hiddenCursoId
-      || String(r.cursoId   ?? r.curso_id   ?? r.fk_curso   ?? priv.cursoId   ?? '')
+    const dataInicioSeries = priv.data_inicio ? new Date(priv.data_inicio).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : ''
+    const dataFimSeries    = priv.data_fim    ? new Date(priv.data_fim).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : ''
 
-    // periodoId — cobre todos os nomes possíveis
-    const periodoId = hiddenPeriodoId
-      || String(r.periodoId ?? r.periodo_id ?? r.fk_periodo ?? priv.periodoId ?? '')
-
-    // salaId
-    const salaId = String(r.salaId ?? r.sala_id ?? r.salald ?? priv.salaId ?? '')
-
-    // professorId
-    const professorId = hiddenProfId
-      || String(r.professorId ?? r.professor_id ?? r.fk_professor ?? priv.professorId ?? '')
-
-    // disciplinaId
-    const disciplinaId = hiddenDiscId
-      || String(r.disciplinaId ?? r.disciplina_id ?? r.disciplinald ?? priv.disciplinaId ?? '')
-
-    // inicio — tenta todos os campos de data
-    const inicio = r.dia_horario_inicio ?? r.dataInicio ?? r.start?.dateTime ?? r.start ?? ''
-
-    // diaSemana — campo salvo explicitamente no POST
-    const diaSemana = r.diaSemana ?? r.dia_semana ?? priv.diaSemana ?? ''
-
-    // uso/nome da disciplina
-    const uso = r.uso ?? r.summary ?? priv.uso ?? ''
-
-    return { cursoId, periodoId, salaId, professorId, disciplinaId, inicio, diaSemana, uso }
+    return { cursoId, periodoId, salaId, professorId, disciplinaId, inicio, diaSemana, uso, status, startMin, endMin, dataInicioSeries, dataFimSeries }
   }
 
   const reservasFiltradas = useMemo(() => {
@@ -137,106 +107,91 @@ export default function MapaOcupacao() {
     })
   }, [todasReservas, filtroCursoId, filtroPeriodoId])
 
-  const encontrarReserva = (slot, dia) => {
-    if (slot.isBreak) return null
-    const slotMin = parseSlotMinutos(slot.label)
+  const encontrarReservas = (slot, dia) => {
+    if (slot.isBreak) return []
+    const { start: sStart, end: sEnd } = parseSlotRange(slot.label)
     const diaNum  = WEEKDAY_NUM[dia]
 
-    return reservasFiltradas.find(r => {
+    return reservasFiltradas.filter(r => {
       const d = extrair(r)
-
-      // 1) Compara pelo campo diaSemana gravado (mais confiável)
+      
+      // Validação de Dia
       if (d.diaSemana) {
         if (d.diaSemana !== dia) return false
       } else {
-        // 2) Fallback: deriva o dia da data, removendo Z para evitar shift UTC
         if (!d.inicio) return false
-        const isoLocal = String(d.inicio).replace('Z', '')
-        const startDate = new Date(isoLocal)
-        if (startDate.getDay() !== diaNum) return false
+        const dt = new Date(d.inicio.replace('Z', ''))
+        if (dt.getDay() !== diaNum) return false
       }
 
-      // Compara horário de início com o slot (tolerância de 10 min)
-      const isoLocal = String(d.inicio).replace('Z', '')
-      const start = new Date(isoLocal)
-      const startMin = start.getHours() * 60 + start.getMinutes()
-      return Math.abs(startMin - slotMin) <= 10
+      // Detecção de Sobreposição (Overlap)
+      return (d.startMin < sEnd) && (d.endMin > sStart)
     })
   }
 
-  const salvarAula = async () => {
-    if (!form.disciplinaId || !form.professorId || !form.salaId) {
-      setErroModal('Preencha todos os campos antes de salvar.')
-      return
-    }
-    setSalvando(true); setErroModal('')
-    try {
-      const data   = proximaData(modal.dia)
-      const inicio = montarISO(data, modal.slot.horaInicio)
-      const fim    = montarISO(data, modal.slot.horaFim)
-      const userId = localStorage.getItem('userId')
+  const agruparMatches = (matches) => {
+    if (!matches.length) return []
+    
+    // Sort: Approved first, then by date
+    const sorted = [...matches].sort((a, b) => {
+      const da = extrair(a), db = extrair(b);
+      const isAppA = da.status === 'approved' || da.status === 'aprovado'
+      const isAppB = db.status === 'approved' || db.status === 'aprovado'
+      if (isAppA !== isAppB) return isAppA ? -1 : 1
+      return 0
+    })
 
-      const meta = JSON.stringify({
-        cId:    filtroCursoId,
-        pId:    filtroPeriodoId,
-        profId: form.professorId,
-        dId:    form.disciplinaId
-      })
-
-      const discNome = disciplinas.find(d => String(d.id || d.idDisciplina) === form.disciplinaId)?.nomeDisciplina || ''
-      const profNome = professores.find(p => String(p.id || p.idProfessor) === form.professorId)?.nomeProf || ''
-
-      await createReservation({
-        fk_usuario:         Number(userId),
-        salaId:             Number(form.salaId),
-        professorId:        Number(form.professorId),
-        disciplinaId:       Number(form.disciplinaId),
-        cursoId:            Number(filtroCursoId),
-        periodoId:          Number(filtroPeriodoId),
-        tipo:               'AULA',
-        dia_horario_inicio: inicio,
-        dia_horario_saida:  fim,
-        diaSemana:          modal.dia,
-        dataInicio:         inicio,
-        dataFim:            fim,
-        uso:                discNome,
-        justificativa:      `${discNome} - ${profNome} | META:${meta}`,
-        status:             'APPROVED'
-      })
-
-      setModal(null)
-      carregar()
-    } catch (err) {
-      console.error('[MapaOcupacao] Erro ao salvar:', err)
-      setErroModal('Erro ao salvar. Verifique o console para detalhes.')
-    } finally { setSalvando(false) }
+    const groups = {}
+    sorted.forEach(r => {
+      const d = extrair(r)
+      const key = d.uso
+      if (!groups[key]) {
+        groups[key] = { 
+          uso: d.uso, 
+          status: d.status,
+          inicio: d.dataInicioSeries,
+          fim: d.dataFimSeries,
+          professorId: d.professorId,
+          salaId: d.salaId,
+          count: 0
+        }
+      }
+      groups[key].count++
+    })
+    return Object.values(groups)
   }
 
-  const nomeProf = (id) => professores.find(p => String(p.id || p.idProfessor) === id)?.nomeProf || 'Prof.'
-  const nomeSala = (id) => salas.find(s => String(s.id || s.idSala) === id)?.nomeSala || 'Sala'
+  const nomeProf = (id) => professores.find(p => String(p.id || p.idProfessor) === String(id))?.nomeProf || 'Prof.'
+  const nomeSala = (id) => salas.find(s => String(s.id || s.idSala) === String(id))?.nomeSala || 'Sala'
 
   const gerarPDF = () => {
     const doc = new jsPDF({ orientation: 'l', unit: 'mm', format: 'a4' });
     const curso = cursos.find(c => String(c.id || c.idCurso) === filtroCursoId)?.nomeCurso || 'Geral';
     const periodo = periodos.find(p => String(p.id || p.idPeriodo) === filtroPeriodoId)?.semestre || '';
-
     doc.setFontSize(16);
     doc.text(`Mapa de Ocupação - ${curso}`, 14, 15);
     doc.setFontSize(10);
     doc.text(`Período: ${periodo} | Gerado em: ${new Date().toLocaleString()}`, 14, 22);
-
     const processarTurno = (turno) => {
       const slots = SLOTS.filter(s => s.shift === turno);
-      const rows = slots.map(slot => {
+      return slots.map(slot => {
         const row = [slot.label];
         WEEKDAYS.forEach(dia => {
           if (slot.isBreak) {
             row.push('PAUSA');
           } else {
-            const res = encontrarReserva(slot, dia);
-            if (res) {
-              const d = extrair(res);
-              row.push(`${d.uso}\n${nomeProf(d.professorId)}\n${nomeSala(d.salaId)}`);
+            const matches = encontrarReservas(slot, dia);
+            const approved = matches.filter(m => {
+              const d = extrair(m)
+              return d.status === 'approved' || d.status === 'aprovado'
+            })
+            
+            if (approved.length > 0) {
+              const d = extrair(approved[0]);
+              const info = `${d.uso}\n(${d.dataInicioSeries} - ${d.dataFimSeries})\n${nomeProf(d.professorId)}`;
+              row.push(approved.length > 1 ? `[CONFLITO]\n${info}` : info);
+            } else if (matches.length > 0) {
+              row.push('STATUS: PENDENTE\n(Aguardando Aprovação)');
             } else {
               row.push('');
             }
@@ -244,9 +199,7 @@ export default function MapaOcupacao() {
         });
         return row;
       });
-      return rows;
     };
-
     autoTable(doc, {
       startY: 28,
       head: [['Horário', ...WEEKDAYS]],
@@ -261,7 +214,6 @@ export default function MapaOcupacao() {
         }
       }
     });
-
     doc.addPage();
     doc.text(`TURNO: TARDE`, 14, 15);
     autoTable(doc, {
@@ -278,7 +230,6 @@ export default function MapaOcupacao() {
         }
       }
     });
-
     doc.save(`Mapa_Ocupacao_${curso.replace(/\s+/g, '_')}.pdf`);
   };
 
@@ -295,40 +246,52 @@ export default function MapaOcupacao() {
             <tr key={i} className="border-b last:border-0">
               <td className="p-4 text-[10px] font-black bg-slate-50 text-slate-500">{slot.label}</td>
               {WEEKDAYS.map(dia => {
-                const res = encontrarReserva(slot, dia)
-                const d   = res ? extrair(res) : null
+                const matches = encontrarReservas(slot, dia)
+                const meta    = agruparMatches(matches)
+
                 return (
-                  <td key={dia} className="p-1.5 border-l min-w-[120px]">
+                  <td key={dia} className="p-1.5 border-l min-w-[140px] align-top">
                     {slot.isBreak
-                      ? <div className="text-center text-[8px] text-amber-400 font-black">PAUSA</div>
-                      : res
+                      ? <div className="text-center text-[8px] text-amber-400 font-black py-4">PAUSA</div>
+                      : meta.length > 0
                         ? (
-                          <div className="p-2 rounded-lg border border-blue-200 bg-blue-50 relative group">
-                            <p className="text-[9px] text-blue-700 font-black">{d.uso}</p>
-                            <p className="text-[8px] text-blue-600 flex items-center gap-1"><User size={8}/> {nomeProf(d.professorId)}</p>
-                            <p className="text-[8px] text-blue-500 flex items-center gap-1 uppercase"><MapPin size={8}/> {nomeSala(d.salaId)}</p>
-                            {isAdmin && (
-                              <button
-                                onClick={async (e) => {
-                                  e.stopPropagation()
-                                  if (window.confirm('Excluir esta aula?')) {
-                                    await deleteReservation(res.id, true)
-                                    carregar()
-                                  }
-                                }}
-                                className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 bg-red-100 p-1 rounded-full text-red-500"
-                              ><Trash2 size={10}/></button>
+                          <div 
+                            onClick={() => setDetalhesSlot({ matches, slot, dia })}
+                            className={`p-2 rounded-xl border cursor-pointer hover:shadow-md transition-all duration-300 animate-in zoom-in ${
+                              meta.length > 1 
+                                ? 'bg-indigo-600 border-indigo-700 shadow-indigo-100' 
+                                : (meta[0].status === 'approved' || meta[0].status === 'aprovado'
+                                    ? 'bg-blue-50 border-blue-200' 
+                                    : 'bg-amber-50 border-amber-200')
+                            }`}
+                          >
+                            {meta.length > 1 ? (
+                              <div className="text-center py-1">
+                                <p className="text-[10px] font-black text-white uppercase tracking-tight">{meta.length} Matérias</p>
+                                <p className="text-[8px] font-medium text-indigo-100 opacity-80 italic">Clique para detalhes</p>
+                              </div>
+                            ) : (
+                                <div className="space-y-1">
+                                    <div className="flex items-center justify-between gap-1">
+                                        <p className={`text-[9px] font-black truncate ${
+                                          (meta[0].status === 'approved' || meta[0].status === 'aprovado') ? 'text-blue-700' : 'text-amber-700'
+                                        }`}>
+                                          {meta[0].uso}
+                                        </p>
+                                        {!(meta[0].status === 'approved' || meta[0].status === 'aprovado') && 
+                                          <span className="text-[7px] font-black px-1 rounded bg-amber-200 text-amber-800 uppercase shrink-0">Pendente</span>
+                                        }
+                                    </div>
+                                    <p className={`text-[7px] font-bold italic leading-none ${
+                                      (meta[0].status === 'approved' || meta[0].status === 'aprovado') ? 'text-blue-600/70' : 'text-amber-600/70'
+                                    }`}>
+                                      ({meta[0].inicio || '?'} até {meta[0].fim || '?'})
+                                    </p>
+                                </div>
                             )}
                           </div>
                         )
-                        : (
-                          <div
-                            onClick={() => abrirModal(slot, dia)}
-                            className={`h-16 border border-dashed rounded-lg flex items-center justify-center transition-all ${isAdmin ? 'cursor-pointer hover:bg-blue-50' : ''}`}
-                          >
-                            {isAdmin && <Plus size={14} className="text-slate-300"/>}
-                          </div>
-                        )
+                        : <div className="h-16" />
                     }
                   </td>
                 )
@@ -359,7 +322,7 @@ export default function MapaOcupacao() {
         <div className="bg-white p-3 rounded-xl border flex flex-col gap-1">
           <label className="text-[10px] font-bold text-slate-400">CURSO</label>
           <select value={filtroCursoId} onChange={e => setFiltroCursoId(e.target.value)} className="text-sm font-bold bg-transparent outline-none">
-            {cursos.map(c => <option key={c.id || c.idCurso} value={String(c.id || c.idCurso)}>{c.nomeCurso}</option>)}
+            {cursos.map(c => <option key={c.id || c.idCurso} value={String(c.id || c.idCurso)}>{c.nomeCurso || c.nome}</option>)}
           </select>
         </div>
         <div className="bg-white p-3 rounded-xl border flex flex-col gap-1">
@@ -373,35 +336,90 @@ export default function MapaOcupacao() {
       <RenderTabela titulo="TURNO: MANHÃ" turno={Shift.MANHA} />
       <RenderTabela titulo="TURNO: TARDE" turno={Shift.TARDE} />
 
-      {modal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
-            <h2 className="text-lg font-black mb-1">Adicionar Aula</h2>
-            <p className="text-xs text-slate-400 mb-4">{modal.dia} · {modal.slot.label}</p>
-            {erroModal && <div className="p-2 bg-red-50 text-red-600 text-xs rounded mb-4">{erroModal}</div>}
-            <div className="space-y-4">
-              <select value={form.disciplinaId} onChange={e => setForm({...form, disciplinaId: e.target.value})} className="w-full p-2.5 border rounded-xl text-sm">
-                <option value="">Selecione a Disciplina...</option>
-                {disciplinas.map(d => <option key={d.id || d.idDisciplina} value={String(d.id || d.idDisciplina)}>{d.nomeDisciplina}</option>)}
-              </select>
-              <select value={form.professorId} onChange={e => setForm({...form, professorId: e.target.value})} className="w-full p-2.5 border rounded-xl text-sm">
-                <option value="">Selecione o Professor...</option>
-                {professores.map(p => <option key={p.id || p.idProfessor} value={String(p.id || p.idProfessor)}>{p.nomeProf}</option>)}
-              </select>
-              <select value={form.salaId} onChange={e => setForm({...form, salaId: e.target.value})} className="w-full p-2.5 border rounded-xl text-sm">
-                <option value="">Selecione a Sala...</option>
-                {salas.map(s => <option key={s.id || s.idSala} value={String(s.id || s.idSala)}>{s.nomeSala}</option>)}
-              </select>
-            </div>
-            <div className="flex gap-3 mt-6">
-              <button onClick={() => setModal(null)} className="flex-1 py-2 border rounded-xl">Cancelar</button>
-              <button onClick={salvarAula} disabled={salvando} className="flex-1 py-2 bg-indigo-600 text-white rounded-xl font-bold">
-                {salvando ? 'Salvando...' : 'Salvar'}
+      {/* MODAL DE DETALHES DO SLOT */}
+      {detalhesSlot && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-[2rem] w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in duration-300">
+            <div className="px-8 py-6 flex items-center justify-between" style={{ background: 'linear-gradient(135deg, #1c1aa3 0%, #150355 100%)' }}>
+              <div className="flex items-center gap-3">
+                 <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center">
+                    <Clock className="text-white" size={20} />
+                 </div>
+                 <div>
+                    <h3 className="text-lg font-black text-white italic uppercase tracking-tighter">Detalhes do Horário</h3>
+                    <p className="text-blue-200 text-xs font-bold">{detalhesSlot.dia} — {detalhesSlot.slot.label}</p>
+                 </div>
+              </div>
+              <button 
+                onClick={() => setDetalhesSlot(null)}
+                className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-all"
+              >
+                <X size={20} />
               </button>
+            </div>
+
+            <div className="p-8 space-y-4 max-h-[60vh] overflow-y-auto">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Resumo das Reservas ({agruparMatches(detalhesSlot.matches).length})</p>
+              
+              {agruparMatches(detalhesSlot.matches).map((grp, idx) => {
+                const isApproved = grp.status === 'approved' || grp.status === 'aprovado'
+                return (
+                  <div key={idx} className={`p-5 rounded-3xl border-2 transition-all ${
+                    isApproved ? 'bg-blue-50/50 border-blue-100 hover:border-blue-300' : 'bg-amber-50/50 border-amber-100 hover:border-amber-300'
+                  }`}>
+                    <div className="flex items-start justify-between gap-4 mb-3">
+                      <div>
+                        <h4 className={`text-sm font-black uppercase ${isApproved ? 'text-blue-900' : 'text-amber-900'}`}>{grp.uso}</h4>
+                        <p className={`text-[10px] font-bold italic mb-1 ${isApproved ? 'text-blue-600/70' : 'text-amber-600/70'}`}>
+                          Duração: {grp.inicio || '?'} — {grp.fim || '?'}
+                        </p>
+                        <span className={`inline-block px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tighter ${
+                          isApproved ? 'bg-blue-200 text-blue-800' : 'bg-amber-200 text-amber-800'
+                        }`}>
+                          {isApproved ? 'Confirmado' : 'Aguardando Aprovação'}
+                        </span>
+                      </div>
+                      <div className={`p-2 rounded-xl scale-75 origin-top-right ${isApproved ? 'bg-blue-200/50' : 'bg-amber-200/50'}`}>
+                         {isApproved ? <CheckCircle2 className="text-blue-600" /> : <Clock className="text-amber-600" />}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex items-center gap-2">
+                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isApproved ? 'bg-blue-100' : 'bg-amber-100'}`}>
+                           <User size={14} className={isApproved ? 'text-blue-600' : 'text-amber-600'} />
+                         </div>
+                         <div>
+                            <p className="text-[9px] text-slate-400 font-bold uppercase leading-none mb-1">Professor</p>
+                            <p className="text-[11px] font-black text-slate-700 truncate">{nomeProf(grp.professorId)}</p>
+                         </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isApproved ? 'bg-blue-100' : 'bg-amber-100'}`}>
+                           <MapPin size={14} className={isApproved ? 'text-blue-600' : 'text-amber-600'} />
+                         </div>
+                         <div>
+                            <p className="text-[9px] text-slate-400 font-bold uppercase leading-none mb-1">Local/Sala</p>
+                            <p className="text-[11px] font-black text-slate-700 truncate uppercase">{nomeSala(grp.salaId)}</p>
+                         </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="p-8 pt-0">
+               <button 
+                  onClick={() => setDetalhesSlot(null)}
+                  className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-slate-200 hover:bg-slate-800 transition-all active:scale-[0.98]"
+               >
+                  Fechar Visualização
+               </button>
             </div>
           </div>
         </div>
       )}
     </div>
-  )
+  );
 }

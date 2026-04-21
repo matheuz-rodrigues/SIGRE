@@ -49,9 +49,16 @@ def build_local_event(
             "private": {
                 "fk_sala": str(reservation.fk_sala),
                 "fk_usuario": str(reservation.fk_usuario),
+                "solicitante_nome": reservation.usuario.nome if reservation.usuario else "Desconhecido",
+                "professor_nome": reservation.professor.nome if reservation.professor else "Nenhum",
+                "fk_curso": str(reservation.fk_curso or ""),
+                "fk_periodo": str(reservation.fk_periodo or ""),
+                "dia_semana": str(reservation.dia_semana or ""),
                 "tipo": str(reservation.tipo or ""),
                 "uso": str(reservation.uso or ""),
                 "oficio": str(reservation.oficio or ""),
+                "data_inicio": reservation.data_inicio.isoformat() if reservation.data_inicio else "",
+                "data_fim": reservation.data_fim.isoformat() if reservation.data_fim else "",
                 "platform_source": PLATFORM_EVENT_SOURCE,
                 "local_reservation_id": str(reservation.id),
             }

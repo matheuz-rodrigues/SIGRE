@@ -11,6 +11,15 @@ class UserService(BaseService[Usuario]):
         super().__init__(user_repository)
 
     def create_user(self, db: Session, payload: Any) -> Usuario:
+        # Validação de domínio
+        allowed_domains = ["uepa.br", "paginas.uepa.br"]
+        email_domain = payload.email.split("@")[-1].lower() if "@" in payload.email else ""
+        if email_domain not in allowed_domains:
+            raise HTTPException(
+                status_code=403, 
+                detail=f"Domínio de e-mail não permitido. Use @uepa.br ou @paginas.uepa.br"
+            )
+
         existing_user = self.repository.get_by_email(db, payload.email)
         if existing_user:
             raise HTTPException(status_code=409, detail="E-mail já cadastrado")

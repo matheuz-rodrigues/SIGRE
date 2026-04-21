@@ -68,9 +68,9 @@ def approve_reservation(
 def refuse_reservation(
     reservation_id: int,
     db: Session = Depends(get_db),
-    _u = Depends(require_role(ROLE_ADMIN))
+    current_user = Depends(require_role(ROLE_ADMIN))
 ):
-    return allocation_service.reject_reservation(db, reservation_id)
+    return allocation_service.reject_reservation(db, reservation_id, current_user)
 
 @router.delete("/{reservation_id}")
 def delete_reservation(

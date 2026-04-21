@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useSchedule } from '../Schedule/ScheduleContext'
+import { getCookie } from '../../utils/cookieUtils'
 import api from '../../services/api'
 import { fetchCurrentUser, applyUserProfile } from '../../services/AuthService'
 import {
@@ -83,10 +84,10 @@ const RoomRequestForm = ({ onClose, userRole, onSolicitacaoCriada }) => {
                 })
             } catch {
                 if (cancelled) return
-                const nome = localStorage.getItem('userName') || ''
-                const email = localStorage.getItem('userEmail') || ''
-                const matAluno = localStorage.getItem('userMatricula') || ''
-                const siape = localStorage.getItem('userSiape') || ''
+                const nome = getCookie('userName') || ''
+                const email = getCookie('userEmail') || ''
+                const matAluno = getCookie('userMatricula') || ''
+                const siape = getCookie('userSiape') || ''
                 const idDoc =
                     userRole === 'professor' ? (siape || matAluno) : matAluno
                 setLocked({ solicitante: nome, email, matricula: idDoc })

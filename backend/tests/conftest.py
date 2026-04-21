@@ -62,12 +62,12 @@ from app.services.security import create_access_token
 def test_admin_user(db_session):
     from app.models.user import Usuario
     # clean up first if exists
-    admin = db_session.query(Usuario).filter(Usuario.email == "admin@test.com").first()
+    admin = db_session.query(Usuario).filter(Usuario.email == "admin@uepa.br").first()
     if not admin:
         admin = Usuario(
-            email="admin@test.com",
+            email="admin@uepa.br",
             username="admin_test",
-            senha="hashed_password",
+            senha="Str0ng_!@#KeyFixture",
             tipo_usuario=3, # admin
             status="aprovado",
             nome="Admin Test"

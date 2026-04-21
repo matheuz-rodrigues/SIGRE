@@ -1,9 +1,10 @@
-import { User, LogOut, Shield } from 'lucide-react'
+import { LogOut, User, Bell, ChevronDown, Shield } from 'lucide-react'
+import { getCookie } from '../../utils/cookieUtils'
 import AdminPainel from '../AdminPainel/AdminPainel'
 import logo from '../../assets/logouepa.png'
 
 const Protection = ({ onLogOut }) => {
-    const adminUser = localStorage.getItem('adminUser') || 'Admin'
+    const adminUser = getCookie('adminUser') || 'Admin'
 
     return (
         <div className="min-h-screen bg-gray-50">

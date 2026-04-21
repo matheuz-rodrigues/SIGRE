@@ -42,19 +42,58 @@ def get_calendar_events(
 		start = center.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 		next_month = (start.replace(day=28) + timedelta(days=4)).replace(day=1)
 		end = next_month
-	items = list_events(db=db, user_id=_u.id, time_min_utc=start, time_max_utc=end)
-	if items is None:
-		raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Google credentials not connected")
+	# 1. Busca eventos do Google
+	google_items = list_events(db=db, user_id=_u.id, time_min_utc=start, time_max_utc=end)
+	
+	# 2. Busca alocações locais
+	from app.services.reservation_service import allocation_service
+	local_res = allocation_service.list_reservations(
+		db=db,
+		current_user=_u,
+		room_id=room_id,
+		user_id=user_id,
+		date_from=start,
+		date_to=end
+	)
+	local_items = local_res.get("items", [])
+
 	result = []
-	for ev in items:
-		if not _is_platform_event(ev):
-			continue
-		priv = (ev.get("extendedProperties") or {}).get("private") or {}
-		if room_id is not None and str(priv.get("fk_sala")) != str(room_id):
-			continue
-		if user_id is not None and str(priv.get("fk_usuario")) != str(user_id):
-			continue
-		result.append(ev)
+	# Inclui locais (formatados como o front espera)
+	for aloc in local_items:
+		result.append({
+			"id": f"local_{aloc['id']}",
+			"summary": aloc.get("uso") or "Reserva",
+			"start": {"dateTime": aloc.get("dia_horario_inicio")},
+			"end": {"dateTime": aloc.get("dia_horario_saida")},
+			"extendedProperties": {
+				"private": {
+					"fk_sala": str(aloc.get("salaId")),
+					"fk_usuario": str(aloc.get("fk_usuario")),
+					"local_reservation_id": str(aloc["id"]),
+					"platform_source": PLATFORM_EVENT_SOURCE
+				}
+			}
+		})
+
+	# Inclui Google (se não for duplicado)
+	if google_items:
+		local_ids = {str(aloc["id"]) for aloc in local_items}
+		for ev in google_items:
+			if not _is_platform_event(ev):
+				continue
+			priv = (ev.get("extendedProperties") or {}).get("private") or {}
+			
+			# Se já temos o id local na lista de alocações, ignoramos o do Google para não duplicar na visualização
+			loc_id = priv.get("local_reservation_id")
+			if loc_id in local_ids:
+				continue
+
+			if room_id is not None and str(priv.get("fk_sala")) != str(room_id):
+				continue
+			if user_id is not None and str(priv.get("fk_usuario")) != str(user_id):
+				continue
+			result.append(ev)
+
 	return {"items": result}
 
 

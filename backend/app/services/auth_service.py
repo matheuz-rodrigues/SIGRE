@@ -41,6 +41,15 @@ class AuthService:
         }
 
     def register(self, db: Session, data: UserCreate) -> Usuario:
+        # Validação de domínio
+        allowed_domains = ["uepa.br", "paginas.uepa.br"]
+        email_domain = data.email.split("@")[-1].lower() if "@" in data.email else ""
+        if email_domain not in allowed_domains:
+            raise HTTPException(
+                status_code=403, 
+                detail=f"Domínio de e-mail não permitido. Use @uepa.br ou @paginas.uepa.br"
+            )
+
         # Verificações de duplicidade
         if db.query(Usuario).filter(Usuario.email == data.email).first():
             raise HTTPException(status_code=409, detail="E-mail já cadastrado")

@@ -5,6 +5,7 @@ import RoomRequestForm from './RoomRequestForm'
  import ProfileModal from './ProfileModal' 
 import axios from 'axios'
 import { Building2, ClipboardList, Plus, GraduationCap, BookOpen, LogOut, Bell, Calendar, Clock, UserCircle } from 'lucide-react'
+import { getCookie } from '../../utils/cookieUtils'
 import logo from '../../assets/logouepa.png'
 
 import api from '../../services/api'
@@ -30,14 +31,14 @@ const UserView = ({ userRole, onLogOut }) => {
 
     const cfg = roleConfig[userRole] || roleConfig.aluno
     const RoleIcon = cfg.Icon
-    const adminUser = localStorage.getItem('adminUser') || cfg.label
+    const adminUser = getCookie('adminUser') || cfg.label
     // Email salvo no login (para buscar solicitações do usuário)
-    const userEmail = localStorage.getItem('userEmail') || ''
+    const userEmail = getCookie('userEmail') || ''
 
     const pendentes = solicitacoes.filter(s => s.status === 'pendente').length
 
     const carregarSolicitacoes = async () => {
-        if (!localStorage.getItem('access_token')) return
+        if (!getCookie('access_token')) return
         setLoading(true)
         try {
             const res = await api.get('/solicitations/mine')

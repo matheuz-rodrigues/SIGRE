@@ -76,12 +76,12 @@ def get_allocation_history_data(db: Session) -> List[HistoryReportOut]:
         
         # Fallbacks amigáveis para campos nulos
         report.append(HistoryReportOut(
-            Data=data_str,
-            Horário=periodo_str,
-            Professor=a.professor.nome if a.professor else (a.usuario.nome if a.usuario else "Não informado"),
-            Disciplina=a.disciplina.nome if a.disciplina else (a.uso or "Não informada"),
-            Curso=a.curso.nome if a.curso else None,
-            Sala=a.sala.descricao_sala if a.sala else "Desconhecida"
+            data=data_str,
+            periodo=periodo_str,
+            professor=a.professor.nome if a.professor else (a.usuario.nome if a.usuario else "Não informado"),
+            disciplina=a.disciplina.nome if a.disciplina else (a.uso or "Não informada"),
+            curso=a.curso.nome if a.curso else None,
+            sala=a.sala.descricao_sala or a.sala.codigo_sala if a.sala else "Desconhecida"
         ))
         
     return report

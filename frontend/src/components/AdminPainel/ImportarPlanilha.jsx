@@ -189,7 +189,13 @@ const ImportarPlanilha = ({ onClose, onImportado }) => {
                 conjuntosDeDados.push({
                     titulo: 'Histórico de Horários',
                     colunas: ['Data', 'Horário', 'Professor', 'Disciplina', 'Sala'],
-                    linhas: res.data.map(h => ({ Data: h.Data, Horário: h.Horário, Professor: h.Professor, Disciplina: h.Disciplina, Sala: h.Sala }))
+                    linhas: res.data.map(h => ({ 
+                        Data: h.data, 
+                        'Horário': h.periodo, 
+                        Professor: h.professor, 
+                        Disciplina: h.disciplina, 
+                        Sala: h.sala 
+                    }))
                 })
             }
 

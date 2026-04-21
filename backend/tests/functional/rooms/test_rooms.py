@@ -56,7 +56,7 @@ def test_update_room(client, admin_token_headers, db_session):
     payload = {
         "capacidade": 40
     }
-    response = client.put(f"/rooms/{room.id}", json=payload, headers=admin_token_headers)
+    response = client.patch(f"/rooms/{room.id}", json=payload, headers=admin_token_headers)
     assert response.status_code == 200
     data = response.json()
     assert data["capacidade"] == 40
@@ -68,11 +68,11 @@ def test_update_room_unauthorized(client, db_session):
         db_session.add(room)
         db_session.commit()
     payload = {"capacidade": 50}
-    response = client.put(f"/rooms/{room.id}", json=payload)
+    response = client.patch(f"/rooms/{room.id}", json=payload)
     assert response.status_code == 401
 
 def test_update_non_existent_room(client, admin_token_headers):
-    response = client.put("/rooms/99999", json={"capacidade": 50}, headers=admin_token_headers)
+    response = client.patch("/rooms/99999", json={"capacidade": 50}, headers=admin_token_headers)
     assert response.status_code == 404
 
 def test_delete_room(client, admin_token_headers, db_session):

@@ -44,7 +44,7 @@ function dateInRange(date, dataInicio, dataFim) {
     return d >= ini && d <= fim
 }
 
-const MonthCalendar = () => {
+const MonthCalendar = ({ isConnected = false }) => {
     const { horarios, salas, cursos } = useSchedule()
 
     const today = new Date()
@@ -92,10 +92,18 @@ const MonthCalendar = () => {
     const getDayStats = (date) => {
         if (!date) return null
         const ocupacoes = getOcupacoesDoDia(date)
-        const salasOcupadas = new Set(ocupacoes.map(h => h.salaId))
+        const aprovadas = ocupacoes.filter(h => 
+            !h.status || h.status.toLowerCase() === 'approved' || h.status.toLowerCase() === 'aprovado'
+        )
+        const pendentes = ocupacoes.filter(h => 
+            h.status && (h.status.toLowerCase() === 'pending' || h.status.toLowerCase() === 'pendente')
+        )
+        
+        const salasOcupadas = new Set(aprovadas.map(h => h.salaId))
         const totalSalas = filterSala ? 1 : salas.length
         return {
             ocupadas: salasOcupadas.size,
+            pendentes: pendentes.length,
             total: totalSalas,
             taxa: totalSalas > 0 ? salasOcupadas.size / totalSalas : 0,
             horarios: ocupacoes,
@@ -126,10 +134,13 @@ const MonthCalendar = () => {
     const selectedStats = selectedDate ? getDayStats(selectedDate) : null
     const salasSelecionadas = selectedDate ? (() => {
         const ocupacoesMap = {}
-        getOcupacoesDoDia(selectedDate).forEach(h => {
-            if (!ocupacoesMap[h.salaId]) ocupacoesMap[h.salaId] = []
-            ocupacoesMap[h.salaId].push(h)
-        })
+        const ocupacoes = getOcupacoesDoDia(selectedDate)
+        if (Array.isArray(ocupacoes)) {
+            ocupacoes.forEach(h => {
+                if (!ocupacoesMap[h.salaId]) ocupacoesMap[h.salaId] = []
+                ocupacoesMap[h.salaId].push(h)
+            })
+        }
 
         return salas
             .filter(s => !filterSala || s.id === parseInt(filterSala))
@@ -138,9 +149,11 @@ const MonthCalendar = () => {
                 horarios: (ocupacoesMap[s.id] || []).sort((a, b) =>
                     a.horarioInicio.localeCompare(b.horarioInicio)
                 ),
-                ocupada: !!ocupacoesMap[s.id],
+                ocupada: (ocupacoesMap[s.id] || []).some(h => 
+                    !h.status || h.status.toLowerCase() === 'approved' || h.status.toLowerCase() === 'aprovado'
+                ),
             }))
-            .sort((a, b) => b.ocupada - a.ocupada) // ocupadas primeiro
+            .sort((a, b) => b.ocupada - a.ocupada || (ocupacoesMap[b.id]?.length || 0) - (ocupacoesMap[a.id]?.length || 0))
     })() : []
 
     return (
@@ -152,10 +165,13 @@ const MonthCalendar = () => {
                 <div>
                     <h2 className="text-xl font-black text-white">Calendário de Ocupação</h2>
                     <p className="text-blue-200 text-xs mt-0.5">Disponibilidade mensal das salas</p>
-                    {googleEventCount !== null && (
-                        <p className="text-emerald-200 text-[10px] mt-1 font-semibold">
-                            Google Calendar: {googleEventCount} evento(s) SIGRE neste mês (conta conectada).
+                    {isConnected && googleEventCount !== null && (
+                        <p className="text-emerald-200 text-[10px] mt-1 font-semibold flex items-center gap-1">
+                            <CheckCircle2 size={10} /> Google Calendar: {googleEventCount} eventos sincronizados
                         </p>
+                    )}
+                    {!isConnected && (
+                         <p className="text-blue-300/60 text-[10px] mt-1 italic">Dados não sincronizados com o Google Calendar</p>
                     )}
                 </div>
 
@@ -170,7 +186,7 @@ const MonthCalendar = () => {
                         <option value="" className="text-gray-800 bg-white">Todas as salas</option>
                         {salas.map(s => (
                             <option key={s.id} value={s.id} className="text-gray-800 bg-white">
-                                {s.nome}
+                                {s.nomeSala || s.nome}
                             </option>
                         ))}
                     </select>
@@ -331,11 +347,11 @@ const MonthCalendar = () => {
                         <div className="grid grid-cols-2 gap-2 px-4 py-3 border-b border-gray-100">
                             <div className="bg-red-50 rounded-xl p-3 text-center border border-red-100">
                                 <p className="text-2xl font-black text-red-600">{selectedStats.ocupadas}</p>
-                                <p className="text-[10px] text-red-400 font-semibold uppercase tracking-wide">Ocupada{selectedStats.ocupadas !== 1 ? 's' : ''}</p>
+                                <p className="text-[10px] text-red-400 font-semibold uppercase tracking-wide">Confirmada{selectedStats.ocupadas !== 1 ? 's' : ''}</p>
                             </div>
-                            <div className="bg-green-50 rounded-xl p-3 text-center border border-green-100">
-                                <p className="text-2xl font-black text-green-600">{selectedStats.total - selectedStats.ocupadas}</p>
-                                <p className="text-[10px] text-green-400 font-semibold uppercase tracking-wide">Disponível{selectedStats.total - selectedStats.ocupadas !== 1 ? 'is' : 'l'}</p>
+                            <div className="bg-amber-50 rounded-xl p-3 text-center border border-amber-100">
+                                <p className="text-2xl font-black text-amber-600">{selectedStats.pendentes}</p>
+                                <p className="text-[10px] text-amber-400 font-semibold uppercase tracking-wide">Pendente{selectedStats.pendentes !== 1 ? 's' : ''}</p>
                             </div>
                         </div>
 
@@ -378,7 +394,7 @@ const MonthCalendar = () => {
                                         <div className="flex items-center gap-2">
                                             <Building2 size={13}
                                                 style={{ color: sala.ocupada ? '#dc2626' : '#16a34a' }} />
-                                            <span className="text-xs font-bold text-gray-700">{sala.nome}</span>
+                                            <span className="text-xs font-bold text-gray-700">{sala.nomeSala || sala.nome}</span>
                                             <span className="text-[9px] text-gray-400 capitalize">{sala.tipo}</span>
                                         </div>
                                         {sala.ocupada
@@ -397,20 +413,37 @@ const MonthCalendar = () => {
                                                         className="flex items-start gap-2 pl-2 border-l-2"
                                                         style={{ borderColor: curso?.cor || '#6366f1' }}>
                                                         <div className="flex-1 min-w-0">
-                                                            <p className="text-[11px] font-bold text-gray-800 truncate">
-                                                                {h.disciplina || 'Sem disciplina'}
-                                                            </p>
-                                                            <div className="flex items-center gap-2 mt-0.5">
-                                                                <span className="flex items-center gap-1 text-[10px] text-gray-500">
-                                                                    <Clock size={9} />
-                                                                    {h.horarioInicio}–{h.horarioFim}
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                <p className="text-[11px] font-bold text-gray-800 truncate">
+                                                                    {h.disciplina || 'Sem disciplina'}
+                                                                </p>
+                                                                <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${
+                                                                    (!h.status || h.status.toLowerCase() === 'approved' || h.status.toLowerCase() === 'aprovado')
+                                                                    ? 'bg-green-50 text-green-600'
+                                                                    : 'bg-amber-50 text-amber-600'
+                                                                }`}>
+                                                                    {(!h.status || h.status.toLowerCase() === 'approved' || h.status.toLowerCase() === 'aprovado') ? 'Aprovado' : 'Pendente'}
                                                                 </span>
-                                                                {h.professor && (
-                                                                    <span className="flex items-center gap-1 text-[10px] text-gray-500 truncate">
-                                                                        <User size={9} />
-                                                                        {h.professor.split(' ')[0]}
+                                                            </div>
+                                                            <div className="flex flex-col gap-0.5 mt-1">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className="flex items-center gap-1 text-[10px] text-gray-500">
+                                                                        <Clock size={9} />
+                                                                        {h.horarioInicio}–{h.horarioFim}
                                                                     </span>
-                                                                )}
+                                                                </div>
+                                                                <div className="flex items-center gap-1.5 mt-0.5">
+                                                                    <User size={10} className="text-gray-400" />
+                                                                    <span className="text-[10px] text-gray-600 font-medium truncate">
+                                                                        Prof: {h.professorNome || h.professor || '—'}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <Users size={10} className="text-gray-400" />
+                                                                    <span className="text-[10px] text-gray-400 italic truncate">
+                                                                        Req: {h.solicitante || 'Admin'}
+                                                                    </span>
+                                                                </div>
                                                             </div>
                                                         </div>
                                                         {curso && (

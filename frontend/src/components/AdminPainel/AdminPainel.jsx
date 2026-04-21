@@ -7,7 +7,7 @@ import {
     Plus, LayoutGrid, ClipboardList, Calendar, Database,
     CheckCircle2, XCircle, Clock, Building2, User, Users,
     AlignLeft, ChevronDown, ChevronUp, GraduationCap, BookOpen,
-    Bell, Filter, Search, FileSpreadsheet, AlertTriangle, Settings, Link, ArrowRight
+    Bell, Filter, Search, FileSpreadsheet, AlertTriangle, Settings, Link, ArrowRight, History
 } from 'lucide-react'
 
 // Componentes Internos
@@ -25,8 +25,17 @@ const STATUS_STYLES = {
     recusado: { label: 'Recusado', bg: '#fee2e2', color: '#dc2626', dot: '#ef4444', border: '#fecaca' },
 }
 
+const normalizeStatus = (status) => {
+    if (!status) return 'pendente'
+    const s = status.toLowerCase()
+    if (s === 'pending') return 'pendente'
+    if (s === 'approved') return 'aprovado'
+    if (s === 'rejected' || s === 'recusado' || s === 'refused') return 'recusado'
+    return s
+}
+
 const AdminPainel = () => {
-    const { adicionarHorario, atualizarHorario } = useSchedule()
+    const { adicionarHorario, atualizarHorario, horarios } = useSchedule()
     const [showImport, setShowImport] = useState(false)
     const [showForm, setShowForm] = useState(false)
     const [horarioEdit, setHorarioEdit] = useState(null)
@@ -34,6 +43,9 @@ const AdminPainel = () => {
         const params = new URLSearchParams(window.location.search);
         return params.get('tab') || 'horarios';
     })
+    const [currentPage, setCurrentPage] = useState(1);
+    const solsPerPage = 10;
+    const [expandedGroups, setExpandedGroups] = useState({});
 
     const [isGoogleConnected, setIsGoogleConnected] = useState(false)
     const [loadingGoogle, setLoadingGoogle] = useState(false)
@@ -119,28 +131,83 @@ const AdminPainel = () => {
     const carregarSolicitacoes = async () => {
         setLoadingSols(true)
         try {
-            const res = await api.get('/solicitations/')
-            setSolicitacoes(res.data.map(s => ({
+            const [resSols, resReservaPending, resSalas] = await Promise.all([
+                api.get('/solicitations/'),
+                api.get('/reservations/?status=PENDING'),
+                api.get('/rooms/')
+            ]);
+
+            const salasMap = (resSalas.data || []).reduce((acc, s) => ({ ...acc, [s.id]: s.nomeSala || s.codigo_sala }), {});
+
+            const solsExt = (resSols.data || []).map(s => ({
                 id: s.idSolicitacao,
+                type: 'external',
                 solicitante: s.solicitante,
-                email: s.email,
-                matricula: s.matricula,
-                papel: s.papel,
                 motivo: s.motivo,
                 descricao: s.descricao,
-                sala: s.sala?.nomeSala || '',
-                salaId: s.salaId,
-                diaSemana: s.diaSemana,
-                dataEvento: s.dataEvento || '',
-                horario: `${s.horarioInicio} – ${s.horarioFim}`,
-                horarioInicio: s.horarioInicio,
-                horarioFim: s.horarioFim,
-                participantes: s.participantes,
-                observacoes: s.observacoes || '',
-                status: s.status,
-                motivoRecusa: s.motivoRecusa || '',
-                criadoEm: new Date(s.criadoEm).toLocaleString('pt-BR'),
-            })))
+                salaNome: s.sala?.nomeSala || salasMap[s.fk_sala] || 'Sem Sala',
+                salaId: s.fk_sala,
+                horario: `${s.horario_inicio?.substring(0, 5)} – ${s.horario_fim?.substring(0, 5)}`,
+                status: normalizeStatus(s.status),
+                criadoEm: new Date(s.created_at || s.criadoEm).getTime(),
+                criadoEmLabel: new Date(s.created_at || s.criadoEm).toLocaleString('pt-BR'),
+                diaSemana: s.dia_semana || s.diaSemana,
+                dataEvento: s.data_evento || s.dataEvento
+            }));
+
+            const internalGroups = {};
+            (resReservaPending.data?.items || []).forEach(r => {
+                const priv = r.extendedProperties?.private || {};
+                const baseId = priv.local_reservation_id || r.id?.split(':')[0];
+                const startDT = r.start?.dateTime || '';
+
+                if (!internalGroups[baseId]) {
+                    internalGroups[baseId] = {
+                        id: baseId,
+                        type: 'internal',
+                        solicitante: r.professor || priv.uso || 'Admin',
+                        motivo: r.summary || 'Reserva Direta',
+                        salaNome: salasMap[priv.fk_sala] || `Sala ${priv.fk_sala}`,
+                        salaId: parseInt(priv.fk_sala),
+                        horario: `${r.start?.dateTime?.split('T')[1]?.substring(0, 5)} – ${r.end?.dateTime?.split('T')[1]?.substring(0, 5)}`,
+                        status: normalizeStatus(r.status || 'PENDING'),
+                        criadoEm: 0,
+                        criadoEmLabel: 'Reserva Direta',
+                        series: []
+                    };
+                }
+
+                internalGroups[baseId].series.push({
+                    instanceId: r.id,
+                    data: startDT ? startDT.split('T')[0] : '—',
+                    diaSemana: priv.dia_semana || '—',
+                    status: normalizeStatus(r.status || 'PENDING')
+                });
+            });
+
+            const approvedList = (horarios || []).filter(h => normalizeStatus(h.status) === 'aprovado');
+            const resInt = Object.values(internalGroups);
+            const allSols = [...solsExt, ...resInt].map(sol => {
+                const solStart = sol.horario?.split(' – ')[0];
+                const solEnd = sol.horario?.split(' – ')[1];
+
+                const conflitos = approvedList.filter(h => {
+                    if (h.salaId !== sol.salaId) return false;
+                    const timeOverlap = (solStart < h.horarioFim) && (solEnd > h.horarioInicio);
+                    if (!timeOverlap) return false;
+
+                    if (sol.dataEvento) {
+                        const sDate = new Date(sol.dataEvento + 'T12:00:00');
+                        const hIni = new Date(h.dataInicio + 'T00:00:00');
+                        const hFim = new Date(h.dataFim + 'T23:59:59');
+                        return sDate >= hIni && sDate <= hFim && h.diaSemana === sol.diaSemana;
+                    }
+                    return h.diaSemana === sol.diaSemana;
+                });
+                return { ...sol, temConflito: conflitos.length > 0 };
+            });
+
+            setSolicitacoes(allSols.sort((a, b) => b.criadoEm - a.criadoEm));
         } catch (err) {
             console.error('Erro ao carregar solicitações:', err)
         } finally {
@@ -169,7 +236,7 @@ const AdminPainel = () => {
             .catch(() => setMetrics(null))
     }, [])
 
-    // ── Handlers de Usuários (Passados para UserManagement) ──
+    // ── Handlers de Usuários ──
     const handleAprovarUsuario = async (id) => {
         try {
             await api.patch(`/users/approve/${id}`)
@@ -192,46 +259,61 @@ const AdminPainel = () => {
         } catch (err) { alert('Erro ao excluir.') }
     }
 
-    const handleCheckAprovar = async (solicitacao) => {
-        await handleFinalizarAprovacao(solicitacao.id);
-    }
-
-    const handleFinalizarAprovacao = async (id, substituir = false) => {
+    const handleCheckAprovar = async (item) => {
         try {
-            await api.patch(`/solicitations/${id}/status`, {
-                status: 'aprovado'
-            });
-            carregarSolicitacoes();
-            setConflito(null);
-            setExpandedId(null);
-        } catch (err) { alert('Erro ao finalizar aprovação.'); }
-    }
+            const res = item.type === 'internal'
+                ? await api.patch(`/reservations/approve/${item.id}`)
+                : await api.patch(`/solicitations/${item.id}/status`, { status: 'aprovado' });
 
-    const handleRecusarSolicitacao = async (id) => {
-        try {
-            await api.patch(`/solicitations/${id}/status`, {
-                status: 'recusado',
-                motivoRecusa: motivoRecusa[id] || ''
+            setModalFeedback({
+                show: true,
+                title: 'Sucesso',
+                message: res.data?.message || 'Solicitação aprovada com sucesso!',
+                type: 'success'
             })
             carregarSolicitacoes()
-            setExpandedId(null)
+        } catch (err) {
+            setModalFeedback({
+                show: true,
+                title: 'Erro na Aprovação',
+                message: err.response?.data?.detail || 'Erro ao processar aprovação.',
+                type: 'error'
+            })
+        }
+    }
+
+    const handleRecusarSolicitacao = async (item) => {
+        try {
+            if (item.type === 'internal') {
+                await api.patch(`/reservations/refuse/${item.id}`)
+            } else {
+                await api.patch(`/solicitations/${item.id}/status`, {
+                    status: 'recusado',
+                    motivoRecusa: motivoRecusa[item.id] || ''
+                })
+            }
+            carregarSolicitacoes()
         } catch (err) { alert('Erro ao recusar solicitação.') }
     }
 
-    const solicitacoesFiltradas = solicitacoes.filter(s => {
+    const solicitacoesFilter = solicitacoes.filter(s => {
         if (filtroStatus !== 'todos' && s.status !== filtroStatus) return false
-        if (busca && !s.solicitante.toLowerCase().includes(busca.toLowerCase()) &&
-            !s.descricao.toLowerCase().includes(busca.toLowerCase())) return false
+        if (busca && !s.solicitante.toLowerCase().includes(busca.toLowerCase())) return false
         return true
     })
+
+    const solicitacoesPaginadas = solicitacoesFilter.slice(
+        (currentPage - 1) * solsPerPage,
+        currentPage * solsPerPage
+    );
 
     const pendentesSols = solicitacoes.filter(s => s.status === 'pendente').length
     const pendentesUser = usuarios.filter(u => u.status === 'pendente').length
 
     const TABS = [
         { key: 'horarios', label: 'Horários', Icon: LayoutGrid, badge: null },
-        { key: 'solicitacoes', label: 'Solicitações', Icon: ClipboardList, badge: pendentesSols > 0 ? pendentesSols : null },
         { key: 'calendario', label: 'Calendário', Icon: Calendar, badge: null },
+        { key: 'solicitacoes', label: 'Solicitações', Icon: ClipboardList, badge: pendentesSols > 0 ? pendentesSols : null },
         { key: 'cadastros', label: 'Cadastros', Icon: Database, badge: null },
         { key: 'usuarios', label: 'Usuários', Icon: Users, badge: pendentesUser > 0 ? pendentesUser : null },
         { key: 'configuracoes', label: 'Configurações', Icon: Settings, badge: null },
@@ -305,7 +387,7 @@ const AdminPainel = () => {
                     <div className="bg-white rounded-[2.5rem] w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in duration-300">
                         <div className="p-8 text-center">
                             <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${modalFeedback.type === 'success' ? 'bg-green-50 text-green-600' :
-                                    modalFeedback.type === 'error' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'
+                                modalFeedback.type === 'error' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'
                                 }`}>
                                 {modalFeedback.type === 'success' ? <CheckCircle2 size={32} /> :
                                     modalFeedback.type === 'error' ? <XCircle size={32} /> : <Bell size={32} />}
@@ -352,11 +434,29 @@ const AdminPainel = () => {
             {/* CONTEÚDO PRINCIPAL */}
             <div className="p-8">
 
+                {/* BANNER DE STATUS GOOGLE - Apenas na aba de Horários */}
+                {!isGoogleConnected && activeTab === 'horarios' && (
+                    <div className="mb-8 p-6 rounded-[2rem] bg-amber-50 border border-amber-100 flex items-center justify-between group animate-in slide-in-from-top-4 duration-500">
+                        <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-2xl bg-amber-200/50 flex items-center justify-center shrink-0">
+                                <Link size={20} className="text-amber-700" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-black text-amber-900 uppercase italic">Sua conta do Google não está conectada</p>
+                                <p className="text-xs text-amber-700/70 font-medium">As reservas não serão sincronizadas automaticamente com o Google Calendar.</p>
+                            </div>
+                        </div>
+                        <button onClick={handleConnectGoogle} className="px-6 py-3 bg-amber-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-amber-800 transition-all shadow-lg shadow-amber-200 flex items-center gap-2">
+                            Conectar Agora <ArrowRight size={14} />
+                        </button>
+                    </div>
+                )}
+
                 {activeTab === 'usuarios' && (
-                    <UserManagement 
-                        usuarios={usuarios} 
-                        onAprovar={handleAprovarUsuario} 
-                        onRecusar={handleRecusarUsuario} 
+                    <UserManagement
+                        usuarios={usuarios}
+                        onAprovar={handleAprovarUsuario}
+                        onRecusar={handleRecusarUsuario}
                         onDeletar={handleDeletarUsuario}
                         onUsuarioCriado={carregarUsuarios}
                     />
@@ -370,9 +470,9 @@ const AdminPainel = () => {
                                     <p className="text-[10px] font-bold text-gray-400 uppercase">Alocações</p>
                                     <p className="text-2xl font-black text-gray-900">{metrics.total ?? 0}</p>
                                 </div>
-                                {Object.entries(metrics.status || {}).slice(0, 3).map(([k, v]) => (
+                                {Object.entries(metrics.status || {}).map(([k, v]) => (
                                     <div key={k} className="rounded-xl border border-gray-100 bg-white p-4">
-                                        <p className="text-[10px] font-bold text-gray-400 uppercase">{k || '—'}</p>
+                                        <p className="text-[10px] font-bold text-gray-400 uppercase">{normalizeStatus(k)}</p>
                                         <p className="text-2xl font-black text-indigo-900">{v}</p>
                                     </div>
                                 ))}
@@ -402,48 +502,129 @@ const AdminPainel = () => {
 
                 {activeTab === 'solicitacoes' && (
                     <div className="animate-in fade-in duration-500">
-                        <div className="flex justify-between items-end mb-6">
+                        <div className="flex justify-between items-center mb-6">
                             <h3 className="text-xl font-black text-gray-900 italic uppercase">Solicitações de Espaço</h3>
-                            <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-xl">
-                                {['todos', 'pendente', 'aprovado', 'recusado'].map(s => (
-                                    <button key={s} onClick={() => setFiltroStatus(s)}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold capitalize transition-all ${filtroStatus === s ? 'bg-white text-blue-900 shadow-sm' : 'text-gray-400'}`}>
-                                        {s === 'todos' ? 'Ver Tudo' : STATUS_STYLES[s].label}
+                            <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-xl">
+                                    {['todos', 'pendente', 'aprovado', 'recusado'].map(s => (
+                                        <button key={s} onClick={() => { setFiltroStatus(s); setCurrentPage(1); }}
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold capitalize transition-all ${filtroStatus === s ? 'bg-white text-blue-900 shadow-sm' : 'text-gray-400'}`}>
+                                            {s === 'todos' ? 'Ver Tudo' : STATUS_STYLES[s].label}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="flex items-center gap-2 border-l border-gray-100 pl-3">
+                                    <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)}
+                                        className="p-2 rounded-lg hover:bg-gray-50 disabled:opacity-20 transition-all">
+                                        <ChevronDown size={18} className="rotate-90" />
                                     </button>
-                                ))}
+                                    <span className="text-[10px] font-black text-gray-400 uppercase">Pág. {currentPage}</span>
+                                    <button disabled={solicitacoesPaginadas.length < solsPerPage || solicitacoesFilter.length <= currentPage * solsPerPage}
+                                        onClick={() => setCurrentPage(p => p + 1)}
+                                        className="p-2 rounded-lg hover:bg-gray-50 disabled:opacity-20 transition-all">
+                                        <ChevronDown size={18} className="-rotate-90" />
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
                         <div className="space-y-3">
-                            {solicitacoesFiltradas.map(s => (
-                                <div key={s.id} className="bg-white border border-gray-100 rounded-2xl overflow-hidden hover:shadow-md transition-all">
-                                    <button onClick={() => setExpandedId(expandedId === s.id ? null : s.id)} className="w-full flex items-center gap-4 p-5 text-left">
-                                        <div className="w-1.5 h-10 rounded-full" style={{ background: STATUS_STYLES[s.status].dot }} />
-                                        <div className="flex-1 pr-4 min-w-0">
-                                            <div className="flex items-center justify-between gap-2">
-                                                <p className="font-black text-gray-800 text-sm uppercase truncate">{s.solicitante}</p>
-                                                <p className="text-[10px] font-bold text-gray-400/80 uppercase tracking-widest whitespace-nowrap">{s.criadoEm}</p>
+                            {solicitacoesPaginadas.length === 0 ? (
+                                <div className="text-center py-20 bg-gray-50 rounded-3xl border border-dashed border-gray-200">
+                                    <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center mx-auto mb-4 border border-gray-100">
+                                        <History size={24} className="text-gray-300" />
+                                    </div>
+                                    <p className="text-gray-400 font-medium">Nenhuma solicitação encontrada</p>
+                                </div>
+                            ) : solicitacoesPaginadas.map((sol) => (
+                                <div key={`${sol.type}-${sol.id}`} className="bg-white rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all overflow-hidden group">
+                                    <div className="p-5 flex items-center justify-between">
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-1.5 h-12 rounded-full" style={{ background: sol.type === 'internal' ? '#fbbf24' : '#6366f1' }} />
+                                            <div>
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <h4 className="font-black text-gray-900 uppercase tracking-tight">{sol.solicitante}</h4>
+                                                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase ${sol.type === 'internal' ? 'bg-amber-50 text-amber-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                                                        {sol.type === 'internal' ? 'Série Interna' : 'Solicitação'}
+                                                    </span>
+                                                    {sol.temConflito && (
+                                                        <span className="flex items-center gap-1 bg-red-50 text-red-600 text-[8px] font-black px-1.5 py-0.5 rounded uppercase border border-red-100 animate-pulse">
+                                                            <AlertTriangle size={10} /> Conflito Detectado
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="text-xs text-gray-400 font-medium leading-none">
+                                                    {sol.salaNome} — {sol.horario} — {sol.type === 'internal' ? `${sol.series?.length || 0} datas` : sol.dataEvento || sol.diaSemana}
+                                                </p>
                                             </div>
-                                            <p className="text-xs text-gray-400 mt-0.5">{s.sala} — {s.horario}</p>
                                         </div>
-                                        {expandedId === s.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                                    </button>
 
-                                    {expandedId === s.id && (
-                                        <div className="px-6 pb-6 pt-2 bg-gray-50/30">
-                                            <div className="bg-white p-4 rounded-xl border border-gray-100 mb-4">
-                                                <p className="text-[10px] font-black text-gray-400 uppercase mb-2">Descrição do Evento</p>
-                                                <p className="text-sm font-bold text-gray-700">{s.motivo}</p>
-                                                <p className="text-sm text-gray-600 mt-1">{s.descricao}</p>
+                                        <div className="flex items-center gap-3">
+                                            <div className="text-right mr-4 hidden sm:block">
+                                                <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">{sol.type === 'internal' ? 'Reserva Direta' : 'Pedido de Espaço'}</p>
+                                                <span className={`text-[10px] font-bold px-2 py-1 rounded-lg ${sol.status === 'pendente' ? 'bg-amber-50 text-amber-600' :
+                                                        sol.status === 'aprovado' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'
+                                                    }`}>
+                                                    {sol.status.toUpperCase()}
+                                                </span>
                                             </div>
-                                            {s.status === 'pendente' && (
+
+                                            {sol.type === 'internal' && (
+                                                <button onClick={() => setExpandedGroups(prev => ({ ...prev, [sol.id]: !prev[sol.id] }))}
+                                                    className="p-2 rounded-xl hover:bg-gray-50 text-gray-400 transition-all">
+                                                    <ChevronDown size={18} className={`transition-transform duration-300 ${expandedGroups[sol.id] ? 'rotate-180' : ''}`} />
+                                                </button>
+                                            )}
+
+                                            {sol.status === 'pendente' && !expandedGroups[sol.id] && (
                                                 <div className="flex gap-2">
-                                                    <input value={motivoRecusa[s.id] || ''} onChange={e => setMotivoRecusa({ ...motivoRecusa, [s.id]: e.target.value })}
-                                                        placeholder="Motivo da recusa (opcional)" className="flex-1 px-4 text-sm rounded-xl border border-gray-200 outline-none focus:ring-2 focus:ring-blue-100" />
-                                                    <button onClick={() => handleRecusarSolicitacao(s.id)} className="px-5 py-2.5 bg-red-50 text-red-600 rounded-xl font-bold text-sm border border-red-100">Recusar</button>
-                                                    <button onClick={() => handleCheckAprovar(s)} className="px-5 py-2.5 bg-green-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-green-100">Aprovar</button>
+                                                    <button onClick={() => handleRecusarSolicitacao(sol)}
+                                                        className="w-9 h-9 flex items-center justify-center rounded-xl bg-red-50 text-red-600 hover:bg-red-100 transition-all">
+                                                        <XCircle size={18} />
+                                                    </button>
+                                                    <button onClick={() => handleCheckAprovar(sol)}
+                                                        className="w-9 h-9 flex items-center justify-center rounded-xl bg-green-50 text-green-600 hover:bg-green-100 transition-all">
+                                                        <CheckCircle2 size={18} />
+                                                    </button>
                                                 </div>
                                             )}
+                                        </div>
+                                    </div>
+
+                                    {/* VISÃO EXPANDIDA (SÉRIE) */}
+                                    {expandedGroups[sol.id] && sol.series && (
+                                        <div className="px-5 pb-5 border-t border-gray-50 bg-gray-50/30">
+                                            <div className="flex items-center justify-between py-3">
+                                                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Controle Individual por Data</span>
+                                                <div className="flex gap-4">
+                                                    <button onClick={() => handleRecusarSolicitacao(sol)} className="text-[10px] font-black text-red-600 hover:underline uppercase">Recusar Toda a Série</button>
+                                                    <button onClick={() => handleCheckAprovar(sol)} className="text-[10px] font-black text-green-600 hover:underline uppercase">Aprovar Toda a Série</button>
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                {sol.series.map((item, idx) => (
+                                                    <div key={idx} className="flex items-center justify-between p-3 bg-white rounded-2xl border border-gray-100 shadow-sm animate-in fade-in slide-in-from-top-1">
+                                                        <div>
+                                                            <p className="text-xs font-bold text-gray-700">{item.data}</p>
+                                                            <p className="text-[10px] text-gray-400 uppercase">{item.diaSemana}</p>
+                                                        </div>
+                                                        {item.status === 'pendente' ? (
+                                                            <div className="flex gap-1">
+                                                                <button onClick={() => handleRecusarSolicitacao({ ...sol, id: item.instanceId, isInstance: true })}
+                                                                    className="w-7 h-7 flex items-center justify-center rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-all">
+                                                                    <XCircle size={14} />
+                                                                </button>
+                                                                <button onClick={() => handleCheckAprovar({ ...sol, id: item.instanceId, isInstance: true })}
+                                                                    className="w-7 h-7 flex items-center justify-center rounded-lg bg-green-50 text-green-500 hover:bg-green-100 transition-all">
+                                                                    <CheckCircle2 size={14} />
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-[9px] font-bold text-gray-300 uppercase">{item.status}</span>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
                                     )}
                                 </div>
@@ -454,45 +635,10 @@ const AdminPainel = () => {
 
                 {activeTab === 'calendario' && (
                     <div className="space-y-4">
-                        {!isGoogleConnected ? (
-                            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3 animate-in fade-in slide-in-from-top-2">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
-                                        <Link size={18} className="text-blue-600" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-blue-900 font-bold">Conectar Google Calendar</p>
-                                        <p className="text-xs text-blue-700/70">Sincronize as reservas aprovadas automaticamente com sua agenda.</p>
-                                    </div>
-                                </div>
-                                <button type="button"
-                                    onClick={handleConnectGoogle}
-                                    className="shrink-0 px-5 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-all shadow-md active:scale-95 flex items-center gap-2">
-                                    Conectar Agora <ArrowRight size={14} />
-                                </button>
-                            </div>
-                        ) : (
-                            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-green-100 bg-green-50/60 px-4 py-3 animate-in fade-in slide-in-from-top-2">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center shrink-0">
-                                        <CheckCircle2 size={18} className="text-green-600" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-green-900 font-bold">Google Calendar Conectado</p>
-                                        <p className="text-xs text-green-700/70">As reservas aprovadas estão sendo sincronizadas automaticamente.</p>
-                                    </div>
-                                </div>
-                                <button type="button"
-                                    onClick={handleDisconnectGoogle}
-                                    className="shrink-0 px-4 py-2 rounded-xl border border-green-200 text-green-700 text-xs font-bold hover:bg-green-100 transition-all">
-                                    Desconectar Agenda
-                                </button>
-                            </div>
-                        )}
-                        <MonthCalendar />
+                        <MonthCalendar isConnected={isGoogleConnected} />
                     </div>
                 )}
-                {activeTab === 'cadastros' && <DataManager />}
+                {activeTab === 'cadastros' && <DataManager onReturnToHorarios={() => setActiveTab('horarios')} />}
 
                 {activeTab === 'configuracoes' && (
                     <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -624,13 +770,35 @@ const AdminPainel = () => {
                             }}
                             onCancel={() => { setShowForm(false); setHorarioEdit(null) }}
                             onSave={async (data) => {
+                                let res;
                                 if (horarioEdit?.id) {
-                                    await atualizarHorario(horarioEdit.id, data)
+                                    res = await atualizarHorario(horarioEdit.id, data)
                                 } else {
-                                    await adicionarHorario(data)
+                                    res = await adicionarHorario(data)
                                 }
-                                setShowForm(false)
-                                setHorarioEdit(null)
+
+                                if (res.success) {
+                                    setShowForm(false)
+                                    setHorarioEdit(null)
+
+                                    const isPendingDueToGoogle = res.data?.google_required_for_approval
+
+                                    setModalFeedback({
+                                        show: true,
+                                        title: isPendingDueToGoogle ? 'Salvo como Pendente' : 'Sucesso',
+                                        message: isPendingDueToGoogle
+                                            ? 'O horário foi salvo, mas ficou PENDENTE porque sua conta Google não está conectada. Conecte sua conta em "Configurações" para poder aprovar horários.'
+                                            : (horarioEdit?.id ? 'Horário atualizado com sucesso!' : 'Horário cadastrado com sucesso!'),
+                                        type: isPendingDueToGoogle ? 'info' : 'success'
+                                    })
+                                } else {
+                                    setModalFeedback({
+                                        show: true,
+                                        title: 'Erro ao Salvar',
+                                        message: res.error,
+                                        type: 'error'
+                                    })
+                                }
                             }}
                         />
                     </div>

@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import api from '../../services/api';
+import { getCookie } from '../../utils/cookieUtils';
 
 export const ScheduleContext = createContext();
 
@@ -9,35 +10,55 @@ function datePart(isoOrDate) {
     return s.includes('T') ? s.split('T')[0] : s.slice(0, 10);
 }
 
+const RRULE_MAP = {
+    'Segunda': 'MO',
+    'Terça': 'TU',
+    'Quarta': 'WE',
+    'Quinta': 'TH',
+    'Sexta': 'FR',
+    'Sábado': 'SA',
+    'Domingo': 'SU'
+};
+
 /** Monta corpo de criação/atualização de reserva alinhado ao backend (Pydantic). */
-function buildReservationApiPayload(disciplinas, professores, d) {
-    const uid = Number(localStorage.getItem('userId'));
-    const ds = datePart(d.dataInicio);
-    const de = datePart(d.dataFim);
+const buildReservationApiPayload = (disciplinas, professores, d) => {
+    const disc = disciplinas.find(x => x.id === parseInt(d.disciplinaId));
+    const discNome = disc?.nomeDisciplina || disc?.nome || 'Aula';
+    const prof = professores.find(x => x.id === parseInt(d.professorId));
+    const profNome = prof?.nomeProf || prof?.nome || '';
+
+    const ds = d.dataInicio.split('T')[0];
+    const de = d.dataFim.split('T')[0];
+
     const startLocal = `${ds}T${d.horarioInicio}:00`;
-    const endLocal = `${de}T${d.horarioFim}:00`;
-    const disc = disciplinas.find(x => x.id === d.disciplinaId);
-    const prof = professores.find(x => x.id === d.professorId);
-    const discNome = disc?.nomeDisciplina || 'Alocação';
-    const profNome = prof?.nomeProf || '';
+    const endLocal = `${ds}T${d.horarioFim}:00`;
+    
+    // Calcula RRULE
+    let recurrency = null;
+    if (d.diaSemana && RRULE_MAP[d.diaSemana]) {
+        const until = de.replace(/-/g, '') + 'T235959Z';
+        recurrency = `RRULE:FREQ=WEEKLY;BYDAY=${RRULE_MAP[d.diaSemana]};UNTIL=${until}`;
+    }
+
     return {
-        fk_usuario: uid,
-        salaId: d.salaId,
-        professorId: d.professorId,
-        disciplinaId: d.disciplinaId,
-        cursoId: d.cursoId,
-        periodoId: d.periodoId,
+        fk_usuario: parseInt(getCookie('userId')),
+        salaId: parseInt(d.salaId),
+        professorId: parseInt(d.professorId),
+        disciplinaId: parseInt(d.disciplinaId),
+        cursoId: parseInt(d.cursoId),
+        periodoId: parseInt(d.periodoId),
         tipo: 'AULA',
         dia_horario_inicio: new Date(startLocal).toISOString(),
         dia_horario_saida: new Date(endLocal).toISOString(),
         diaSemana: d.diaSemana,
         dataInicio: new Date(startLocal).toISOString(),
-        dataFim: new Date(endLocal).toISOString(),
+        dataFim: new Date(`${de}T${d.horarioFim}:00`).toISOString(),
         uso: discNome,
         justificativa: profNome ? `${discNome} — ${profNome}` : discNome,
-        status: 'APPROVED',
+        recurrency: recurrency,
+        status: 'APPROVED'
     };
-}
+};
 
 function buildReservationPatchPayload(disciplinas, professores, d) {
     const base = buildReservationApiPayload(disciplinas, professores, d);
@@ -62,7 +83,7 @@ export const ScheduleProvider = ({ children }) => {
     const [loading, setLoading] = useState(false);
 
     const recarregarDados = async () => {
-        const token = localStorage.getItem('access_token');
+        const token = getCookie('access_token');
         if (!token) return;
 
         console.log("Atualizando dados...");
@@ -95,22 +116,31 @@ export const ScheduleProvider = ({ children }) => {
             
             if (periodosFmt.length > 0 && !periodoAtivo) setPeriodoAtivo(periodosFmt[0].id);
 
-            // Backend returns { items: [...] } for reservations
             const alocItems = resAloc.data?.items || [];
-            setHorarios(alocItems.map(aloc => ({
-                id: aloc.id,
-                diaSemana: aloc.diaSemana,
-                horarioInicio: aloc.horarioInicio,
-                horarioFim: aloc.horarioFim,
-                dataInicio: aloc.dataInicio ? aloc.dataInicio.split('T')[0] : '',
-                dataFim: aloc.dataFim ? aloc.dataFim.split('T')[0] : '',
-                cursoId: aloc.cursoId,
-                salaId: aloc.salaId,
-                periodoId: aloc.periodoId,
-                disciplina: aloc.disciplina,
-                professor: aloc.professor,
-                semestre: aloc.semestre
-            })));
+            setHorarios(alocItems.map(aloc => {
+                const priv = aloc.extendedProperties?.private || {};
+                const startDT = aloc.start?.dateTime || '';
+                const endDT = aloc.end?.dateTime || '';
+                const daysMap = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+                const extractedDia = startDT ? daysMap[new Date(startDT).getDay()] : '';
+                
+                return {
+                    id: aloc.id,
+                    diaSemana: priv.dia_semana || extractedDia || '',
+                    horarioInicio: startDT ? startDT.split('T')[1]?.substring(0, 5) : '',
+                    horarioFim: endDT ? endDT.split('T')[1]?.substring(0, 5) : '',
+                    dataInicio: startDT ? startDT.split('T')[0] : '',
+                    dataFim: endDT ? endDT.split('T')[0] : '',
+                    cursoId: priv.fk_curso ? parseInt(priv.fk_curso) : null,
+                    salaId: priv.fk_sala ? parseInt(priv.fk_sala) : null,
+                    periodoId: priv.fk_periodo ? parseInt(priv.fk_periodo) : null,
+                    disciplina: aloc.summary,
+                    professor: aloc.description?.split(' — ')[1] || aloc.description || '',
+                    solicitante: priv.solicitante_nome || 'Admin',
+                    professorNome: priv.professor_nome || 'Nenhum',
+                    status: aloc.status
+                };
+            }));
 
             setProfessores(normalize(resProfs.data, 'idProfessor'));
             setDisciplinas(normalize(resDiscs.data, 'idDisciplina'));
@@ -160,18 +190,15 @@ export const ScheduleProvider = ({ children }) => {
             console.log("POST /reservations/", body);
 
             if (!body.fk_usuario) {
-                alert('Sessão inválida: faça login novamente.');
-                return;
+                return { success: false, error: 'Sessão inválida: faça login novamente.' };
             }
-            await api.post('/reservations/', body);
+            const res = await api.post('/reservations/', body);
             recarregarDados();
-            alert("Horário salvo!");
-            return true;
+            return { success: true, data: res.data };
         } catch (error) {
             console.error(error);
-            const msg = error.response?.data?.detail || "Erro ao salvar horário.";
-            alert(typeof msg === 'string' ? msg : "Erro ao salvar horário. Verifique os dados.");
-            return false;
+            const msg = error.response?.data?.detail || "Erro ao salvar horário. Verifique os dados.";
+            return { success: false, error: typeof msg === 'string' ? msg : "Erro ao salvar horário. Verifique os dados." };
         }
     };
 
@@ -181,15 +208,13 @@ export const ScheduleProvider = ({ children }) => {
             const body = buildReservationPatchPayload(disciplinas, professores, dados);
             console.log(`PATCH /reservations/${baseId}`, body);
 
-            await api.patch(`/reservations/${baseId}`, body);
+            const res = await api.patch(`/reservations/${baseId}`, body);
             recarregarDados();
-            alert("Horário atualizado!");
-            return true;
+            return { success: true, data: res.data };
         } catch (error) {
             console.error(error);
             const msg = error.response?.data?.detail || "Erro ao atualizar.";
-            alert(typeof msg === 'string' ? msg : "Erro ao atualizar.");
-            return false;
+            return { success: false, error: typeof msg === 'string' ? msg : "Erro ao atualizar." };
         }
     }
 

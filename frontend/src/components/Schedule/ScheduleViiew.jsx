@@ -43,7 +43,7 @@ const ScheduleViiew = ({ isAdmin = false }) => {
                 <div className='flex flex-col sm:flex-row items-end gap-3'>
                     {/* Botão exportar .ics */}
                    {isAdmin && (
-                     <button
+                    <button
                         onClick={() => setShowExport(true)}
                         className='flex items-center gap-2 px-4 py-2 rounded-lg border font-semibold text-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md'
                         style={{ borderColor: '#1c1aa3', color: '#1c1aa3', background: '#1c1aa308' }}
@@ -52,13 +52,6 @@ const ScheduleViiew = ({ isAdmin = false }) => {
                         Exportar .ics
                     </button>
                    )}
-                   <button
-                        onClick={() => setShowMapa(true)}
-                        className='flex items-center gap-2 px-4 py-2 rounded-lg border font-semibold text-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md border-indigo-600 text-indigo-600 bg-indigo-50'
-                    >
-                        <FileText size={15} />
-                        Mapa de Ocupação
-                    </button>
                 </div>
             </div>
 
@@ -74,29 +67,12 @@ const ScheduleViiew = ({ isAdmin = false }) => {
                 </div>
             </div>
 
-            {/* ── View: Calendário ── */}
-            <MonthCalendar />
+            {/* ── View: Mapa de Ocupação ── */}
+            <MapaOcupacao />
 
             {/* ── Modal de exportação .ics ── */}
             {showExport && (
                 <ExportICSModal onClose={() => setShowExport(false)} />
-            )}
-
-            {/* ── Modal do Mapa de Ocupação ── */}
-            {showMapa && (
-                <div className="fixed inset-0 z-[300] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-                    <div className="bg-white rounded-3xl w-full max-w-6xl max-h-[95vh] overflow-hidden shadow-2xl flex flex-col">
-                        <div className="px-8 py-4 border-b flex justify-between items-center bg-slate-50">
-                            <h3 className="font-black text-slate-800 uppercase tracking-tight">Mapa de Ocupação de Salas</h3>
-                            <button onClick={() => setShowMapa(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
-                                <X size={20} />
-                            </button>
-                        </div>
-                        <div className="flex-1 overflow-y-auto">
-                            <MapaOcupacao />
-                        </div>
-                    </div>
-                </div>
             )}
         </div>
     )

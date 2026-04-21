@@ -103,6 +103,9 @@ const ItemModal = ({ tipo, item, lists, onSave, onClose }) => {
     // Preenche os dados do modal
     cfg.fields.forEach(f => {
         let val = item?.[f.front] || item?.[f.back] || ''
+        
+        // Se for novo curso/sala e tipo color, define um padrão
+        if (!item && f.type === 'color') val = '#3b82f6'
 
         if (tipo === 'disciplinas' && item?.matriculaDisciplina?.includes('| META:') && f.front === 'matricula') {
             val = item.matriculaDisciplina.split('| META:')[0].trim()
@@ -135,7 +138,11 @@ const ItemModal = ({ tipo, item, lists, onSave, onClose }) => {
     const handleSubmit = () => {
         const payload = {}
         cfg.fields.forEach(f => {
-            if (data[f.front] !== undefined && data[f.front] !== '') payload[f.back] = data[f.front]
+            let val = data[f.front]
+            // Fallback para cor se estiver vazio no estado
+            if (f.type === 'color' && (!val || val === '')) val = '#3b82f6'
+            
+            if (val !== undefined && val !== '') payload[f.back] = val
         })
 
         if (cfg.validationSchema) {
@@ -143,11 +150,14 @@ const ItemModal = ({ tipo, item, lists, onSave, onClose }) => {
                 cfg.validationSchema.parse(payload)
                 setErrors({})
             } catch (err) {
+                console.warn("Validation failed for", tipo, err)
                 if (err instanceof z.ZodError) {
                     const fieldErrors = {}
-                    err.errors.forEach(e => {
-                        fieldErrors[e.path[0]] = e.message
-                    })
+                    if (Array.isArray(err.errors)) {
+                        err.errors.forEach(e => {
+                            fieldErrors[e.path[0]] = e.message
+                        })
+                    }
                     setErrors(fieldErrors)
                     return
                 }
@@ -282,9 +292,25 @@ const DataManager = ({ onReturnToHorarios }) => {
             setModal(null)
             if (hasDraft) setShowResumeBanner(true)
         } catch (err) {
-            const d = err.response?.data?.detail
-            const msg = typeof d === 'string' ? d : err.response?.data?.message
-            alert(msg || 'Erro ao salvar. Verifique os dados.')
+            console.error("Erro ao salvar:", err)
+            const detail = err.response?.data?.detail
+            const message = err.response?.data?.message
+            
+            let errorMsg = 'Erro ao salvar. Verifique os dados.'
+            
+            if (typeof detail === 'string') {
+                errorMsg = detail
+            } else if (Array.isArray(detail)) {
+                // Formata erros de validação do FastAPI
+                errorMsg = detail.map(d => {
+                    const field = d.loc ? d.loc[d.loc.length - 1] : ''
+                    return (field ? `${field}: ` : '') + d.msg
+                }).join('\n')
+            } else if (message) {
+                errorMsg = message
+            }
+            
+            alert(errorMsg)
         }
     }
 
@@ -298,9 +324,15 @@ const DataManager = ({ onReturnToHorarios }) => {
                 getRoomTypes().then(setTiposSala).catch(() => setTiposSala([]))
             }
         } catch (err) {
-            const d = err.response?.data?.detail
-            const msg = typeof d === 'string' ? d : 'Erro ao excluir. Este item pode estar em uso.'
-            alert(msg)
+            console.error("Erro ao excluir:", err)
+            const detail = err.response?.data?.detail
+            const message = err.response?.data?.message
+            
+            let errorMsg = 'Erro ao excluir. Este item pode estar em uso.'
+            if (typeof detail === 'string') errorMsg = detail
+            else if (message) errorMsg = message
+            
+            alert(errorMsg)
         }
     }
 

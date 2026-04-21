@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import Header from './components/Header/Header'
+import { getCookie } from "./utils/cookieUtils";
 import { ScheduleProvider } from './components/Schedule/ScheduleContext'
 import ScheduleViiew from './components/Schedule/ScheduleViiew'
 import Footer from './components/Footer/Footer'
@@ -8,10 +9,10 @@ import Protection from './components/Protection/Protection'
 import UserView from './components/UserView/UserView'
 import { clearSession, fetchCurrentUser, applyUserProfile } from './services/AuthService'
 
-const getInitialRole  = () => localStorage.getItem('userRole') || null
+const getInitialRole  = () => getCookie('userRole') || null
 const getInitialAdmin = () =>
-  localStorage.getItem('userRole') === 'admin' ||
-  localStorage.getItem('isAdminAuthenticated') === 'true'
+  getCookie('userRole') === 'admin' ||
+  getCookie('isAdminAuthenticated') === 'true'
 
 function App() {
   const [userRole, setUserRole]   = useState(getInitialRole)
@@ -21,7 +22,7 @@ function App() {
   const isAuthenticated = userRole !== null
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = getCookie('access_token')
     if (!token) return
     fetchCurrentUser()
       .then((me) => {

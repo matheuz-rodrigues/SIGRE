@@ -188,10 +188,16 @@ class AllocationService(BaseService[Alocacao]):
             raise HTTPException(status_code=404, detail="Sala não encontrada.")
 
         from app.services.rbac import ROLE_ADMIN
-        if current_user.tipo_usuario < ROLE_ADMIN:
+        is_admin = current_user.tipo_usuario >= ROLE_ADMIN
+        has_google = google_calendar._get_credentials(db, current_user.id) is not None
+
+        if is_admin:
+            if not has_google:
+                payload.status = "PENDING"
+            elif not payload.status:
+                payload.status = "APPROVED"
+        else:
             payload.status = "PENDING"
-        elif not payload.status:
-            payload.status = "APPROVED"
 
         try:
             data = payload.model_dump()
@@ -208,7 +214,10 @@ class AllocationService(BaseService[Alocacao]):
                 raise
 
         db.refresh(nova)
-        return build_local_event(nova, nova.dia_horario_inicio, nova.dia_horario_saida)
+        result = build_local_event(nova, nova.dia_horario_inicio, nova.dia_horario_saida)
+        if is_admin and not has_google:
+            result["google_required_for_approval"] = True
+        return result
 
     def _sync_google_create(self, db: Session, alocacao: Alocacao, current_user, room: Sala) -> str:
         self._require_google_credentials(db, current_user.id)
@@ -221,6 +230,10 @@ class AllocationService(BaseService[Alocacao]):
         extended_props = {
             "fk_sala": str(alocacao.fk_sala),
             "fk_usuario": str(alocacao.fk_usuario),
+            "fk_professor": str(alocacao.fk_professor or ""),
+            "fk_disciplina": str(alocacao.fk_disciplina or ""),
+            "fk_curso": str(alocacao.fk_curso or ""),
+            "fk_periodo": str(alocacao.fk_periodo or ""),
             "tipo": alocacao.tipo,
             "uso": alocacao.uso or "",
             "platform_source": PLATFORM_EVENT_SOURCE,
@@ -236,8 +249,8 @@ class AllocationService(BaseService[Alocacao]):
         created = google_calendar.create_event(
             db=db,
             user_id=current_user.id,
-            summary=f"[{alocacao.tipo}] {alocacao.uso or f'Reserva Sala {room.codigo_sala or room.id}'}",
-            description=alocacao.justificativa,
+            summary=f"([Aula] {alocacao.uso or 'Reserva'} na {room.codigo_sala or room.id})",
+            description=(alocacao.justificativa or "").split("| META:")[0].strip(),
             start_dt_utc=start_dt,
             end_dt_utc=end_dt,
             location=room.descricao_sala,
@@ -269,8 +282,13 @@ class AllocationService(BaseService[Alocacao]):
                 delete_event(db, current_user.id, ev["id"])
                 print(f"DEBUG: Evento Google {ev['id']} removido para alocação {alocacao.id}")
 
-    def approve_reservation(self, db: Session, reservation_id: int, current_user) -> dict:
-        alocacao = self.repository.get_by_id(db, reservation_id)
+    def approve_reservation(self, db: Session, reservation_id: any, current_user) -> dict:
+        # Suporte para IDs de instância (ex: "5:2025-05-10T08:00:00")
+        if isinstance(reservation_id, str) and ":" in reservation_id:
+            return self._handle_instance_action(db, reservation_id, "APPROVE", current_user)
+            
+        lid = int(reservation_id)
+        alocacao = self.repository.get_by_id(db, lid)
         if not alocacao:
             raise HTTPException(status_code=404, detail="Reserva não encontrada.")
         if alocacao.status == "APPROVED":
@@ -281,12 +299,77 @@ class AllocationService(BaseService[Alocacao]):
         self.repository.update(db, alocacao, {"google_event_id": eid, "status": "APPROVED"})
         return {"message": "Reserva aprovada e sincronizada."}
 
-    def reject_reservation(self, db: Session, reservation_id: int) -> dict:
-        alocacao = self.repository.get_by_id(db, reservation_id)
+    def reject_reservation(self, db: Session, reservation_id: any, current_user) -> dict:
+        if isinstance(reservation_id, str) and ":" in reservation_id:
+            return self._handle_instance_action(db, reservation_id, "REJECT", current_user)
+
+        lid = int(reservation_id)
+        alocacao = self.repository.get_by_id(db, lid)
         if not alocacao:
             raise HTTPException(status_code=404, detail="Reserva não encontrada.")
-        self.repository.update_status(db, alocacao, "REJECTED")
+            
+        if alocacao.status == "APPROVED" and alocacao.google_event_id:
+            google_calendar.delete_event(
+                db=db, user_id=current_user.id, event_id=alocacao.google_event_id
+            )
+            
+        self.repository.update(db, alocacao, {"status": "REJECTED", "google_event_id": None})
         return {"message": "Reserva rejeitada."}
+
+    def _handle_instance_action(self, db: Session, instance_id: str, action: str, current_user) -> dict:
+        """
+        Lógica para 'desmembrar' uma data específica de uma série recorrente.
+        """
+        parts = instance_id.split(":")
+        base_id = int(parts[0])
+        instance_time = parts[1] # ISO Format
+        
+        parent = self.repository.get_by_id(db, base_id)
+        if not parent:
+            raise HTTPException(status_code=404, detail="Reserva base não encontrada.")
+            
+        dt_target = datetime.fromisoformat(instance_time)
+        
+        # 1. Remover data da série original (adicionando EXDATE)
+        self._exclude_date_from_parent(db, parent, dt_target)
+        
+        if action == "APPROVE":
+            # 2. Criar nova reserva isolada e aprovada
+            new_data = {
+                "fk_usuario": parent.fk_usuario,
+                "fk_sala": parent.fk_sala,
+                "fk_professor": parent.fk_professor,
+                "fk_disciplina": parent.fk_disciplina,
+                "fk_curso": parent.fk_curso,
+                "fk_periodo": parent.fk_periodo,
+                "tipo": parent.tipo,
+                "uso": parent.uso,
+                "justificativa": parent.justificativa,
+                "dia_semana": parent.dia_semana,
+                "dia_horario_inicio": dt_target,
+                # A duração é mantida
+                "dia_horario_saida": dt_target + (parent.dia_horario_saida - parent.dia_horario_inicio),
+                "data_inicio": dt_target,
+                "data_fim": dt_target,
+                "status": "PENDING", # Será aprovado logo abaixo
+            }
+            # Salvamos e aprovamos
+            new_aloc = self.repository.create(db, new_data)
+            return self.approve_reservation(db, new_aloc.id, current_user)
+            
+        return {"message": "Data removida da série com sucesso."}
+
+    def _exclude_date_from_parent(self, db: Session, parent: Alocacao, dt: datetime):
+        """Atualiza a string de recorrência para incluir um EXDATE."""
+        exdate_str = dt.strftime("%Y%m%dT%H%M%S")
+        
+        current_rec = parent.recurrency or ""
+        if not current_rec.startswith("RRULE:"):
+             current_rec = f"RRULE:{current_rec}"
+             
+        # Adiciona EXDATE (formato iCal simples)
+        new_rec = f"{current_rec}\nEXDATE:{exdate_str}"
+        self.repository.update(db, parent, {"recurrency": new_rec})
 
     def _sync_google_update(self, db: Session, alocacao: Alocacao, current_user, room: Sala) -> None:
         if not alocacao.google_event_id:
@@ -295,8 +378,8 @@ class AllocationService(BaseService[Alocacao]):
         start_dt = ensure_utc(from_storage_datetime(alocacao.dia_horario_inicio))
         end_dt = ensure_utc(from_storage_datetime(alocacao.dia_horario_saida))
         patch: dict = {
-            "summary": f"[{alocacao.tipo}] {alocacao.uso or f'Reserva Sala {room.codigo_sala or room.id}'}",
-            "description": alocacao.justificativa or "",
+            "summary": f"([Aula] {alocacao.uso or 'Reserva'} na {room.codigo_sala or room.id})",
+            "description": (alocacao.justificativa or "").split("| META:")[0].strip(),
             "start": {"dateTime": start_dt.isoformat(), "timeZone": "UTC"},
             "end": {"dateTime": end_dt.isoformat(), "timeZone": "UTC"},
         }
