@@ -1,5 +1,5 @@
 from typing import Optional, Dict, Any, List, Union
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 from google.oauth2.credentials import Credentials
@@ -18,6 +18,9 @@ def _get_credentials(db: Session, user_id: int) -> Optional[Credentials]:
 	creds_row: Optional[GoogleCredential] = db.query(GoogleCredential).filter(GoogleCredential.user_id == user_id).first()
 	if not creds_row or not creds_row.access_token:
 		return None
+	expiry = creds_row.expiry
+	if expiry is not None and expiry.tzinfo is not None:
+		expiry = expiry.astimezone(timezone.utc).replace(tzinfo=None)
 	creds = Credentials(
 		token=creds_row.access_token,
 		refresh_token=creds_row.refresh_token,
@@ -25,7 +28,7 @@ def _get_credentials(db: Session, user_id: int) -> Optional[Credentials]:
 		client_id=creds_row.client_id or settings.GOOGLE_CLIENT_ID,
 		client_secret=creds_row.client_secret or settings.GOOGLE_CLIENT_SECRET,
 		scopes=(creds_row.scopes or "").split(),
-		expiry=creds_row.expiry,
+		expiry=expiry,
 	)
 	if not creds.valid and creds.refresh_token:
 		try:
