@@ -13,7 +13,7 @@ class Usuario(Base):
     telefone = Column(String(20))
     senha = Column(String(255), nullable=False)
     
-    # tipo_usuario: 1=aluno, 2=professor, 3=admin
+    # tipo_usuario: 1=aluno, 2=professor, 3=admin, 4=tecnico_adm
     tipo_usuario = Column(Integer, server_default=text("1"))
     
     # Campos específicos

@@ -400,8 +400,15 @@ const AdminPainel = () => {
                             {solicitacoesFiltradas.map(s => {
                                 const st = STATUS_STYLES[s.status] || STATUS_STYLES.pendente
                                 const isExpanded = expandedId === s.id
-                                const papelLabel = s.papel === 'professor' ? 'Professor' : 'Aluno'
-                                const papelColor = s.papel === 'professor' ? { bg: '#dbeafe', color: '#1d4ed8' } : { bg: '#ede9fe', color: '#7c3aed' }
+                                const PAPEL_LABELS = { professor: 'Professor', aluno: 'Aluno', tecnico_adm: 'Técnico Adm.', admin: 'Admin' }
+                                const PAPEL_COLORS = {
+                                    professor:   { bg: '#dbeafe', color: '#1d4ed8' },
+                                    aluno:       { bg: '#ede9fe', color: '#7c3aed' },
+                                    tecnico_adm: { bg: '#dcfce7', color: '#15803d' },
+                                    admin:       { bg: '#fee2e2', color: '#dc2626' },
+                                }
+                                const papelLabel = PAPEL_LABELS[s.papel] || s.papel || 'Aluno'
+                                const papelColor = PAPEL_COLORS[s.papel] || PAPEL_COLORS.aluno
                                 return (
                                     <div key={s.id} className="bg-white border rounded-2xl overflow-hidden hover:shadow-md transition-all"
                                         style={{ borderColor: isExpanded ? st.border : '#f3f4f6' }}>

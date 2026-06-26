@@ -35,7 +35,7 @@ class UserBase(BaseModel):
     email: EmailStr
     username: Optional[str] = None
     telefone: Optional[str] = None
-    tipo_usuario: int = 1  # 1=aluno, 2=professor, 3=admin
+    tipo_usuario: int = 1  # 1=aluno, 2=professor, 3=admin, 4=tecnico_adm
     curso: Optional[str] = None
     cursoId: Optional[int] = Field(None, validation_alias=AliasChoices("cursoId", "fk_curso", "curso_id"), serialization_alias="cursoId")
 
@@ -81,5 +81,5 @@ class UserOut(UserBase):
     @computed_field
     @property
     def papel(self) -> str:
-        roles = {1: "aluno", 2: "professor", 3: "admin"}
+        roles = {1: "aluno", 2: "professor", 3: "admin", 4: "tecnico_adm"}
         return roles.get(self.tipo_usuario, "aluno")

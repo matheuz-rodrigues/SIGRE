@@ -12,6 +12,8 @@ import api from '../../services/api'
 const roleConfig = {
     aluno: { label: 'Aluno', Icon: GraduationCap, color: '#7c3aed' },
     professor: { label: 'Professor', Icon: BookOpen, color: '#1d4ed8' },
+    tecnico_adm: { label: 'Técnico Adm.', Icon: BookOpen, color: '#15803d' },
+    admin: { label: 'Admin', Icon: BookOpen, color: '#065f46' },
 }
 
 const STATUS_STYLES = {

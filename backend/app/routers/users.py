@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.try_database import get_db
 from app.schemas.user import UserCreate, UserUpdate, UserOut
 from app.services.entities.user_service import user_service
-from app.services.auth.rbac import get_current_user, require_role, ROLE_ADMIN, ROLE_USER
+from app.services.auth.rbac import get_current_user, require_role, require_role_exact, ROLE_ADMIN, ROLE_USER
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -28,7 +28,7 @@ def list_users(
 def create_user(
     payload: UserCreate,
     db: Session = Depends(get_db),
-    _admin = Depends(require_role(ROLE_ADMIN))
+    _admin = Depends(require_role_exact(ROLE_ADMIN))
 ):
     return user_service.create_user(db, payload)
 
@@ -39,7 +39,7 @@ def update_user(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    if current_user.id != user_id and not (current_user.tipo_usuario >= ROLE_ADMIN):
+    if current_user.id != user_id and current_user.tipo_usuario != ROLE_ADMIN:
          raise HTTPException(status_code=403, detail="Sem permissão")
          
     return user_service.update_user(db, user_id, payload)
@@ -48,7 +48,7 @@ def update_user(
 def approve_user(
     user_id: int,
     db: Session = Depends(get_db),
-    _admin = Depends(require_role(ROLE_ADMIN))
+    _admin = Depends(require_role_exact(ROLE_ADMIN))
 ):
     return user_service.set_status(db, user_id, "aprovado")
 
@@ -56,7 +56,7 @@ def approve_user(
 def refuse_user(
     user_id: int,
     db: Session = Depends(get_db),
-    _admin = Depends(require_role(ROLE_ADMIN))
+    _admin = Depends(require_role_exact(ROLE_ADMIN))
 ):
     return user_service.set_status(db, user_id, "recusado")
 
@@ -64,7 +64,7 @@ def refuse_user(
 def delete_user(
     user_id: int,
     db: Session = Depends(get_db),
-    _admin = Depends(require_role(ROLE_ADMIN))
+    _admin = Depends(require_role_exact(ROLE_ADMIN))
 ):
     user = user_service.get_by_id(db, user_id)
     if not user:

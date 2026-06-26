@@ -107,7 +107,8 @@ def google_callback(
     row.access_token = creds.token
     if getattr(creds, "refresh_token", None):
         row.refresh_token = creds.refresh_token
-        
+    row.expiry = creds.expiry
+
     row.client_id = settings.GOOGLE_CLIENT_ID
     row.client_secret = settings.GOOGLE_CLIENT_SECRET
     row.scopes = " ".join(SCOPES)

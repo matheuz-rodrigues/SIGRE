@@ -26,10 +26,10 @@ function App() {
     fetchCurrentUser()
       .then((me) => {
         applyUserProfile(me)
-        const byTipo = { 1: 'aluno', 2: 'professor', 3: 'admin' }
+        const byTipo = { 1: 'aluno', 2: 'professor', 3: 'admin', 4: 'tecnico_adm' }
         const papel = me.papel || byTipo[me.tipo_usuario] || 'aluno'
         setUserRole(papel)
-        if (papel === 'admin') setIsAdmin(true)
+        if (papel === 'admin' || papel === 'tecnico_adm') setIsAdmin(true)
       })
       .catch((err) => {
         if (err.response?.status === 401) {
@@ -42,7 +42,7 @@ function App() {
 
   const handleSuccessLogin = (role) => {
     setUserRole(role)
-    if (role === 'admin') setIsAdmin(true)
+    if (role === 'admin' || role === 'tecnico_adm') setIsAdmin(true)
     setShowLogin(false)
   }
 

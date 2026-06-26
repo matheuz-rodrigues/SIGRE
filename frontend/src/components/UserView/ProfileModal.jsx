@@ -19,6 +19,7 @@ const cls = {
 const PAPEL_CFG = {
     aluno: { label: 'Aluno', Icon: GraduationCap, color: '#7c3aed', bg: '#ede9fe' },
     professor: { label: 'Professor', Icon: BookOpen, color: '#1d4ed8', bg: '#dbeafe' },
+    tecnico_adm: { label: 'Técnico Adm.', Icon: BookOpen, color: '#15803d', bg: '#dcfce7' },
     admin: { label: 'Admin', Icon: ShieldCheck, color: '#065f46', bg: '#d1fae5' },
 }
 

@@ -2,9 +2,10 @@ import logo from '../../assets/logouepa.png'
 import { LogOut, GraduationCap, BookOpen, Shield } from 'lucide-react'
 
 const roleLabels = {
-  admin:     { label: 'Administrador', Icon: Shield },
-  aluno:     { label: 'Aluno',          Icon: GraduationCap },
-  professor: { label: 'Professor',      Icon: BookOpen },
+  admin:        { label: 'Administrador',  Icon: Shield },
+  aluno:        { label: 'Aluno',          Icon: GraduationCap },
+  professor:    { label: 'Professor',      Icon: BookOpen },
+  tecnico_adm:  { label: 'Técnico Adm.',  Icon: BookOpen },
 }
 
 const Header = ({ isAdmin, setIsAdmin, userRole, onLogOut }) => {

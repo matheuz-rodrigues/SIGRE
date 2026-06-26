@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from google.oauth2.credentials import Credentials
 from google.auth.exceptions import RefreshError
+from google.auth.transport.requests import Request as GoogleRequest
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
@@ -15,9 +16,7 @@ settings = get_settings()
 
 def _get_credentials(db: Session, user_id: int) -> Optional[Credentials]:
 	creds_row: Optional[GoogleCredential] = db.query(GoogleCredential).filter(GoogleCredential.user_id == user_id).first()
-	if not creds_row:
-		return None
-	if not creds_row.access_token:
+	if not creds_row or not creds_row.access_token:
 		return None
 	creds = Credentials(
 		token=creds_row.access_token,
@@ -26,7 +25,18 @@ def _get_credentials(db: Session, user_id: int) -> Optional[Credentials]:
 		client_id=creds_row.client_id or settings.GOOGLE_CLIENT_ID,
 		client_secret=creds_row.client_secret or settings.GOOGLE_CLIENT_SECRET,
 		scopes=(creds_row.scopes or "").split(),
+		expiry=creds_row.expiry,
 	)
+	if not creds.valid and creds.refresh_token:
+		try:
+			creds.refresh(GoogleRequest())
+			creds_row.access_token = creds.token
+			if creds.refresh_token:
+				creds_row.refresh_token = creds.refresh_token
+			creds_row.expiry = creds.expiry
+			db.commit()
+		except Exception:
+			return None
 	return creds
 
 

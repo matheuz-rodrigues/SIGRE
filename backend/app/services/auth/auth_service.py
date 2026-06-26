@@ -9,7 +9,8 @@ from app.services.auth.security import verify_password, hash_password, create_ac
 ROLE_MAP = {
     "aluno": 1,
     "professor": 2,
-    "admin": 3
+    "admin": 3,
+    "tecnico_adm": 4,
 }
 
 REVERSE_ROLE_MAP = {v: k for k, v in ROLE_MAP.items()}
@@ -61,7 +62,7 @@ class AuthService:
         # Admin sempre aprovado (ou conforme regra de negócio, mas aqui vamos deixar pendente se for via cadastro aberto)
         # No frontend admin não cadastra, então assumimos aluno/professor
         status_val = "pendente"
-        if tipo == 3:
+        if tipo in (3, 4):  # admin e tecnico_adm já entram aprovados
             status_val = "aprovado"
 
         user_obj = Usuario(

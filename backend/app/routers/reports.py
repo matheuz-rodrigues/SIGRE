@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 from app.try_database import get_db
 from app.schemas.report import BaseDataReportOut, UserReportOut, HistoryReportOut
-from app.services.auth.rbac import require_role, ROLE_ADMIN
+from app.services.auth.rbac import require_role_exact, ROLE_ADMIN
 from app import services
 
 # Note: assuming 'report_service' is accessible via 'app.services.reporting.report_service'
@@ -28,7 +28,7 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 )
 def get_base_data_report(
     db: Session = Depends(get_db), 
-    _u=Depends(require_role(ROLE_ADMIN))
+    _u=Depends(require_role_exact(ROLE_ADMIN))
 ):
     """
     Endpoint que agrupa os quatro pilares de cadastros do sistema.
@@ -44,7 +44,7 @@ def get_base_data_report(
 )
 def get_users_report(
     db: Session = Depends(get_db), 
-    _u=Depends(require_role(ROLE_ADMIN))
+    _u=Depends(require_role_exact(ROLE_ADMIN))
 ):
     """
     Lista todos os usuários não-removidos do sistema.
@@ -60,7 +60,7 @@ def get_users_report(
 )
 def get_history_report(
     db: Session = Depends(get_db), 
-    _u=Depends(require_role(ROLE_ADMIN))
+    _u=Depends(require_role_exact(ROLE_ADMIN))
 ):
     """
     Lista todas as alocações ordenadas da mais recente para a mais antiga.

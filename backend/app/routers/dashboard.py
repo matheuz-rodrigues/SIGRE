@@ -3,12 +3,12 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.try_database import get_db
 from app.models import Alocacao, Sala, Usuario
-from app.services.auth.rbac import require_role, ROLE_ADMIN
+from app.services.auth.rbac import require_role_exact, ROLE_ADMIN
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 @router.get("/metrics")
-def get_metrics(db: Session = Depends(get_db), current=Depends(require_role(ROLE_ADMIN))):
+def get_metrics(db: Session = Depends(get_db), current=Depends(require_role_exact(ROLE_ADMIN))):
     total_allocations = db.query(func.count(Alocacao.id)).scalar()
     
     status_distribution = db.query(

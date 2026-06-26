@@ -70,10 +70,14 @@ function PasswordStrength({ senha }) {
 const PAPEL_STYLES = {
   aluno: { label: 'Aluno', bg: '#ede9fe', color: '#7c3aed' },
   professor: { label: 'Professor', bg: '#dbeafe', color: '#1d4ed8' },
+  tecnico_adm: { label: 'Técnico Adm.', bg: '#dcfce7', color: '#15803d' },
+  admin: { label: 'Admin', bg: '#fee2e2', color: '#dc2626' },
 };
 
 const UsuarioCard = ({ u, onAprovar, onRecusar, onDeletar, onVisualizar, showAprovar, showDesativar, showReativar }) => {
-  const PapelIcon = u.papel === 'professor' ? BookOpen : GraduationCap;
+  const PapelIcon = u.papel === 'professor' ? BookOpen
+    : u.papel === 'tecnico_adm' || u.papel === 'admin' ? BookOpen
+    : GraduationCap;
   const papelCfg = PAPEL_STYLES[u.papel] || PAPEL_STYLES.aluno;
 
   return (
@@ -156,8 +160,8 @@ export default function UserManagement({ usuarios, onAprovar, onRecusar, onDelet
     }
 
     const emailTrimmed = email.trim().toLowerCase()
-    if (papel === 'professor' && !emailTrimmed.endsWith('@uepa.br')) {
-      alert('E-mail de professor deve terminar com @uepa.br')
+    if ((papel === 'professor' || papel === 'tecnico_adm') && !emailTrimmed.endsWith('@uepa.br')) {
+      alert('E-mail de professor/técnico deve terminar com @uepa.br')
       return
     }
     if (papel === 'aluno' && !emailTrimmed.endsWith('@aluno.uepa.br')) {
@@ -280,7 +284,7 @@ export default function UserManagement({ usuarios, onAprovar, onRecusar, onDelet
           <input className="px-3 py-2 rounded-xl border text-sm" placeholder="Nome completo"
             value={formNovo.nome} onChange={e => setFormNovo(f => ({ ...f, nome: e.target.value }))} />
           <input className="px-3 py-2 rounded-xl border text-sm" type="email"
-            placeholder={formNovo.papel === 'professor' ? 'E-mail (@uepa.br)' : 'E-mail (@aluno.uepa.br)'}
+            placeholder={formNovo.papel === 'aluno' ? 'E-mail (@aluno.uepa.br)' : 'E-mail (@uepa.br)'}
             value={formNovo.email} onChange={e => setFormNovo(f => ({ ...f, email: e.target.value }))} />
           <input className="px-3 py-2 rounded-xl border text-sm" placeholder="Nome de Usuário (opcional)"
             value={formNovo.username} onChange={e => setFormNovo(f => ({ ...f, username: e.target.value }))} />
@@ -296,9 +300,10 @@ export default function UserManagement({ usuarios, onAprovar, onRecusar, onDelet
             value={formNovo.papel} onChange={e => setFormNovo(f => ({ ...f, papel: e.target.value }))}>
             <option value="aluno">Aluno</option>
             <option value="professor">Professor</option>
+            <option value="tecnico_adm">Técnico Adm.</option>
           </select>
 
-          {(formNovo.papel === 'aluno' || formNovo.papel === 'professor') && (
+          {(formNovo.papel === 'aluno' || formNovo.papel === 'professor' || formNovo.papel === 'tecnico_adm') && (
             <div className="sm:col-span-2">
               <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1">Curso {formNovo.papel === 'aluno' ? '(obrigatório para aluno)' : '(opcional)'}</label>
               <select className="w-full px-3 py-2 rounded-xl border text-sm bg-white"
@@ -386,6 +391,7 @@ export default function UserManagement({ usuarios, onAprovar, onRecusar, onDelet
                 value={formEdicao.papel} onChange={e => setFormEdicao(f => ({ ...f, papel: e.target.value }))}>
                 <option value="aluno">Aluno</option>
                 <option value="professor">Professor</option>
+                <option value="tecnico_adm">Técnico Adm.</option>
                 <option value="admin">Admin</option>
               </select>
               <select className="px-3 py-2 rounded-xl border text-sm"

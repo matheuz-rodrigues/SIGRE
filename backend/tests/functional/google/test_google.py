@@ -1,7 +1,12 @@
-"""Rotas /google/* (OAuth e status)."""
+"""Rotas /google/* (OAuth e status) e unit tests de _get_credentials."""
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch, MagicMock
 
 import pytest
+
+# Capture the real _get_credentials before the autouse fixture mocks it at test-run time.
+import app.services.calendar.google_calendar as _gc_module
+_real_get_credentials = _gc_module._get_credentials
 
 
 def test_google_status_unauthorized(client):
@@ -54,3 +59,82 @@ def test_google_connect_returns_auth_url(mock_flow_cls, client, admin_token_head
 def test_google_callback_invalid_session(client):
     r = client.get("/google/callback?state=x&code=y")
     assert r.status_code == 400
+
+
+# ── Unit tests for _get_credentials (called directly, bypassing autouse mock) ─
+
+def test_get_credentials_returns_none_when_no_row(db_session):
+    result = _real_get_credentials(db_session, user_id=99999)
+    assert result is None
+
+
+def test_get_credentials_returns_none_when_no_access_token(db_session):
+    from app.models.google import GoogleCredential
+    row = GoogleCredential(user_id=66661, refresh_token="r", scopes="s")
+    db_session.add(row)
+    db_session.commit()
+    result = _real_get_credentials(db_session, user_id=66661)
+    assert result is None
+
+
+def test_get_credentials_refreshes_expired_token_and_persists(db_session):
+    """Expired access_token → refresh() called → new token and expiry saved to DB."""
+    from app.models.google import GoogleCredential
+
+    new_expiry = datetime.now(tz=timezone.utc) + timedelta(hours=1)
+
+    row = GoogleCredential(
+        user_id=66662,
+        access_token="stale_token",
+        refresh_token="valid_refresh",
+        scopes="https://www.googleapis.com/auth/calendar",
+        expiry=datetime.now(tz=timezone.utc) - timedelta(hours=2),
+        client_id="cid",
+        client_secret="csecret",
+    )
+    db_session.add(row)
+    db_session.commit()
+
+    mock_creds = MagicMock()
+    mock_creds.valid = False
+    mock_creds.refresh_token = "valid_refresh"
+    mock_creds.token = "fresh_token"
+    mock_creds.expiry = new_expiry
+
+    with patch.object(_gc_module, "Credentials", return_value=mock_creds), \
+         patch.object(_gc_module, "GoogleRequest"):
+        result = _real_get_credentials(db_session, user_id=66662)
+
+    assert result is mock_creds
+    mock_creds.refresh.assert_called_once()
+    db_session.refresh(row)
+    assert row.access_token == "fresh_token"
+    assert row.expiry == new_expiry
+
+
+def test_get_credentials_returns_none_when_refresh_fails(db_session):
+    """If refresh raises, _get_credentials returns None instead of propagating."""
+    from app.models.google import GoogleCredential
+
+    row = GoogleCredential(
+        user_id=66663,
+        access_token="stale",
+        refresh_token="bad_refresh",
+        scopes="https://www.googleapis.com/auth/calendar",
+        expiry=datetime.now(tz=timezone.utc) - timedelta(hours=1),
+        client_id="cid",
+        client_secret="csecret",
+    )
+    db_session.add(row)
+    db_session.commit()
+
+    mock_creds = MagicMock()
+    mock_creds.valid = False
+    mock_creds.refresh_token = "bad_refresh"
+    mock_creds.refresh.side_effect = Exception("invalid_grant")
+
+    with patch.object(_gc_module, "Credentials", return_value=mock_creds), \
+         patch.object(_gc_module, "GoogleRequest"):
+        result = _real_get_credentials(db_session, user_id=66663)
+
+    assert result is None

@@ -16,6 +16,7 @@ const roleConfig = {
     admin: { label: 'Administrador', icon: Shield, color: '#1c1aa3' },
     aluno: { label: 'Aluno', icon: GraduationCap, color: '#7c3aed' },
     professor: { label: 'Professor', icon: BookOpen, color: '#1d4ed8' },
+    tecnico_adm: { label: 'Técnico Adm.', icon: BookOpen, color: '#15803d' },
 }
 
 // ── Componente ────────────────────────────────────────────────────────────────
