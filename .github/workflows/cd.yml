@@ -46,8 +46,14 @@ jobs:
             --task-definition sigra-prod-backend \
             --query 'taskDefinition' \
             --output json \
-          | jq --arg IMAGE "${{ secrets.ECR_REPOSITORY_URL }}:${{ github.sha }}" \
+          | jq \
+            --arg IMAGE "${{ secrets.ECR_REPOSITORY_URL }}:${{ github.sha }}" \
+            --arg CALENDAR_ID "${{ secrets.GOOGLE_CALENDAR_ID }}" \
             '.containerDefinitions[0].image = $IMAGE
+             | .containerDefinitions[0].environment = (
+                 .containerDefinitions[0].environment
+                 | map(if .name == "GOOGLE_CALENDAR_ID" then .value = $CALENDAR_ID else . end)
+               )
              | del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.placementConstraints,.compatibilities,.registeredAt,.registeredBy)' \
           > /tmp/task-def.json
 

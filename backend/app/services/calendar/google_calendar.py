@@ -70,10 +70,13 @@ def list_events(
 		)
 		return events_result.get("items", [])
 	except RefreshError:
-		print(f"Token expirado ou revogado para o usuário {user_id}. Reautenticação necessária.")
+		print(f"[google_calendar] token expirado/revogado user={user_id}")
 		return None
+	except HttpError as e:
+		print(f"[google_calendar] HttpError {e.resp.status} ao listar eventos user={user_id} calendar={calendar_id or settings.GOOGLE_CALENDAR_ID}: {e}")
+		raise
 	except Exception as e:
-		print(f"Erro ao listar eventos no Google: {e}")
+		print(f"[google_calendar] erro inesperado ao listar eventos user={user_id}: {e}")
 		return None
 
 

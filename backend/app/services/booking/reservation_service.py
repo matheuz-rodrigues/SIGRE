@@ -22,6 +22,7 @@ from app.builders.reservation_builder import (
 )
 from app.services.calendar import google_calendar
 from app.services.infra.datetime_utils import ensure_utc, ensure_app_timezone, from_storage_datetime, to_storage_datetime
+from googleapiclient.errors import HttpError as GoogleHttpError
 from app.schemas.reservation import ReservationCreate, ReservationUpdate
 from app.services.infra.base_service import BaseService
 from app.services.auth.rbac import ROLE_ADMIN
@@ -72,7 +73,13 @@ class AllocationService(BaseService[Alocacao]):
         self._require_google_credentials(db, user_id)
         start_dt = ensure_utc(start_dt)
         end_dt = ensure_utc(end_dt)
-        items = google_calendar.list_events(db=db, user_id=user_id, time_min_utc=start_dt, time_max_utc=end_dt)
+        try:
+            items = google_calendar.list_events(db=db, user_id=user_id, time_min_utc=start_dt, time_max_utc=end_dt)
+        except GoogleHttpError as e:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Erro na API do Google Calendar ({e.resp.status}): {e.reason}. Verifique a configuração do calendário em Admin → Calendário.",
+            )
         if items is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
