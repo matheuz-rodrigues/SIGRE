@@ -30,10 +30,9 @@ class Settings(BaseSettings):
 	GOOGLE_CLIENT_SECRET: str = ""
 	GOOGLE_REDIRECT_URI: str = "http://localhost:8000/google/callback"
 	GOOGLE_TOKEN_URI: str = "https://oauth2.googleapis.com/token"
-	GOOGLE_CALENDAR_ID: str = "primary"
+	GOOGLE_CALENDAR_ID: str = "primary"  # 'primary' = calendário principal do usuário autenticado (nunca dá 404)
 	# Para onde o Google OAuth redireciona o usuário após salvar as credenciais (SPA)
 	FRONTEND_PUBLIC_URL: str = "http://localhost:8080"
-	GOOGLE_CALENDAR_ID: str = "primary"
 
 	# Lista de tipos de sala configuráveis (ex.: ["laboratorio","auditorio"])
 	ROOM_TYPES: list[str] = ["laboratorio","auditorio"]
