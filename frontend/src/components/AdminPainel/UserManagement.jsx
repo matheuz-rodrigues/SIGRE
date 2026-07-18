@@ -121,7 +121,7 @@ const UsuarioCard = ({ u, onAprovar, onRecusar, onDeletar, onVisualizar, showApr
         {showReativar && !isCurrentUser && !isAdmin && (
           <button onClick={() => onAprovar(u.id)} className="px-3 py-1.5 rounded-lg text-xs font-bold border border-green-200 text-green-600 hover:bg-green-50">Ativar</button>
         )}
-        {!isCurrentUser && (
+        {!isCurrentUser && !isAdmin &&(
           <button onClick={() => onDeletar(u.id)} className="p-1.5 text-gray-300 hover:text-red-500 transition-colors">
             <XCircle size={18} />
           </button>
