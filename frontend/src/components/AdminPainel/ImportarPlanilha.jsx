@@ -93,37 +93,7 @@ const ImportarPlanilha = ({ onClose, onImportado }) => {
     const [exportando, setExportando] = useState(null)
     const [formatoDownload, setFormatoDownload] = useState('excel') // 'excel' | 'pdf'
 
-    const handleArquivo = (e) => {
-        const file = e.target.files[0]
-        if (!file) return
-        setNomeArquivo(file.name)
-        const reader = new FileReader()
-
-        // Usando readAsArrayBuffer conforme correção anterior
-        reader.onload = (evt) => {
-            const wb = XLSX.read(evt.target.result, { type: 'array' })
-            const preview = {}
-            const erros = {}
-            Object.keys(ABAS_CONFIG).forEach(abaEsperada => {
-                if (!wb.SheetNames.includes(abaEsperada)) return
-                const rows = XLSX.utils.sheet_to_json(wb.Sheets[abaEsperada])
-                const cfg = ABAS_CONFIG[abaEsperada]
-                const errosAba = []
-                rows.forEach((row, i) => {
-                    cfg.colunas.forEach(col => {
-                        if (!row[col] || row[col].toString().trim() === '')
-                            errosAba.push(`Linha ${i + 2}: "${col}" está vazia`)
-                    })
-                })
-                preview[abaEsperada] = rows
-                if (errosAba.length > 0) erros[abaEsperada] = errosAba
-            })
-            setDadosPreview(preview)
-            setErrosPreview(erros)
-            setEtapa('preview')
-        }
-        reader.readAsArrayBuffer(file)
-    }
+    
 
     const handleImportar = async () => {
         setEtapa('importando')
@@ -352,27 +322,8 @@ const ImportarPlanilha = ({ onClose, onImportado }) => {
                                 <div className="flex-1 h-px bg-gray-200" />
                             </div>
 
-                            {/* Importar */}
-                            <div>
-                                <div className="flex justify-between items-center mb-3">
-                                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Subir dados de planilha</p>
-                                    <button onClick={baixarModelo} className="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1">
-                                        <Download size={12} /> Modelo.xlsx
-                                    </button>
-                                </div>
-
-                                <input ref={inputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleArquivo} />
-                                <button onClick={() => inputRef.current.click()}
-                                    className="w-full flex flex-col items-center justify-center gap-3 px-5 py-7 rounded-xl border-2 border-dashed border-indigo-300 bg-indigo-50/50 hover:border-indigo-500 hover:bg-indigo-50 transition-all">
-                                    <div className="w-11 h-11 rounded-2xl bg-indigo-100 flex items-center justify-center">
-                                        <Upload size={20} className="text-indigo-600" />
-                                    </div>
-                                    <div className="text-center">
-                                        <p className="text-sm font-bold text-indigo-800">Clique para escolher o arquivo</p>
-                                        <p className="text-xs text-indigo-400 mt-0.5">Aceita .xlsx, .xls ou .csv com as abas padrão</p>
-                                    </div>
-                                </button>
-                            </div>
+                            
+                            
                         </>
                     )}
 
