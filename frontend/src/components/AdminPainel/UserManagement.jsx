@@ -76,6 +76,8 @@ const PAPEL_STYLES = {
 
 const UsuarioCard = ({ u, onAprovar, onRecusar, onDeletar, onVisualizar, showAprovar, showDesativar, showReativar }) => {
   const currentUserId = Number(localStorage.getItem('userId'));
+  const isCurrentUser = u.id === currentUserId;
+  const isAdmin = u.papel === 'admin';
   const PapelIcon = u.papel === 'professor' ? BookOpen
     : u.papel === 'tecnico_adm' || u.papel === 'admin' ? BookOpen
     : GraduationCap;
@@ -111,13 +113,13 @@ const UsuarioCard = ({ u, onAprovar, onRecusar, onDeletar, onVisualizar, showApr
             <button onClick={() => onAprovar(u.id)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-green-600 text-white hover:bg-green-700">Aprovar</button>
           </>
         )}
-        {showDesativar && u.id !== currentUserId && (
+        {showDesativar && !isCurrentUser && !isAdmin && (
           <button onClick={() => onRecusar(u.id)} className="px-3 py-1.5 rounded-lg text-xs font-bold border text-gray-400 hover:bg-gray-50">Desativar</button>
         )}
-        {showReativar && u.id !== currentUserId && (
+        {showReativar && !isCurrentUser && !isAdmin && (
           <button onClick={() => onAprovar(u.id)} className="px-3 py-1.5 rounded-lg text-xs font-bold border border-green-200 text-green-600 hover:bg-green-50">Ativar</button>
         )}
-        {u.id !== currentUserId && (
+        {!isCurrentUser && (
           <button onClick={() => onDeletar(u.id)} className="p-1.5 text-gray-300 hover:text-red-500 transition-colors">
             <XCircle size={18} />
           </button>
