@@ -57,7 +57,7 @@ const ScheduleViiew = ({ isAdmin = false, onAddForDate }) => {
                 <div className='flex flex-wrap gap-3'>
                     {cursos.map(curso => (
                         <div key={curso.id} className='flex items-center gap-2'>
-                            <div className='w-4 h-4 rounded' style={{ backgroundColor: curso.cor }} />
+                            <div className='w-4 h-4 rounded' style={{ backgroundColor: curso.corCurso || curso.cor }} />
                             <span className='text-sm text-gray-700'>{curso.siglaCurso || curso.sigla} — {curso.nomeCurso || curso.nome}</span>
                         </div>
                     ))}

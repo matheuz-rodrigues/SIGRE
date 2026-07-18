@@ -41,7 +41,14 @@ def update_user(
 ):
     if current_user.id != user_id and current_user.tipo_usuario != ROLE_ADMIN:
          raise HTTPException(status_code=403, detail="Sem permissão")
-         
+
+    if current_user.tipo_usuario == ROLE_ADMIN and current_user.id != user_id:
+        target = user_service.get_by_id(db, user_id)
+        if not target:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        if target.tipo_usuario == ROLE_ADMIN:
+            raise HTTPException(status_code=403, detail="Administradores não podem editar outros administradores")
+
     return user_service.update_user(db, user_id, payload)
 
 @router.patch("/approve/{user_id}", response_model=UserOut)
@@ -66,8 +73,12 @@ def delete_user(
     db: Session = Depends(get_db),
     _admin = Depends(require_role_exact(ROLE_ADMIN))
 ):
+    if _admin.id == user_id:
+        raise HTTPException(status_code=403, detail="Você não pode apagar sua própria conta")
     user = user_service.get_by_id(db, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    if user.tipo_usuario == ROLE_ADMIN:
+        raise HTTPException(status_code=403, detail="Administradores não podem excluir outros administradores")
     user_service.repository.soft_delete(db, user)
     return None

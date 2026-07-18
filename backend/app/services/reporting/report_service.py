@@ -72,13 +72,17 @@ def get_allocation_history_data(db: Session) -> List[HistoryReportOut]:
         List[HistoryReportOut]: Lista de alocações formatadas (strings DD/MM/YYYY e HH:MM).
     """
     allocations = db.query(Alocacao).order_by(desc(Alocacao.dia_horario_inicio)).all()
-    
+
     report = []
     for a in allocations:
+        # Pula alocações com datas nulas (dados legados sem constraint aplicada)
+        if not a.dia_horario_inicio or not a.dia_horario_saida:
+            continue
+
         # Formatação de Data e Horário seguindo padrões brasileiros
         data_str = a.dia_horario_inicio.strftime("%d/%m/%Y")
         periodo_str = f"{a.dia_horario_inicio.strftime('%H:%M')} - {a.dia_horario_saida.strftime('%H:%M')}"
-        
+
         # Fallbacks amigáveis para campos nulos
         report.append(HistoryReportOut(
             Data=data_str,
