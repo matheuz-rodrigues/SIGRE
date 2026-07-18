@@ -111,10 +111,10 @@ const UsuarioCard = ({ u, onAprovar, onRecusar, onDeletar, onVisualizar, showApr
             <button onClick={() => onAprovar(u.id)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-green-600 text-white hover:bg-green-700">Aprovar</button>
           </>
         )}
-        {showDesativar && (
+        {showDesativar && u.id !== currentUserId && (
           <button onClick={() => onRecusar(u.id)} className="px-3 py-1.5 rounded-lg text-xs font-bold border text-gray-400 hover:bg-gray-50">Desativar</button>
         )}
-        {showReativar && (
+        {showReativar && u.id !== currentUserId && (
           <button onClick={() => onAprovar(u.id)} className="px-3 py-1.5 rounded-lg text-xs font-bold border border-green-200 text-green-600 hover:bg-green-50">Ativar</button>
         )}
         {u.id !== currentUserId && (
