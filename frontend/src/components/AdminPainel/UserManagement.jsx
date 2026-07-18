@@ -8,7 +8,7 @@ const TERMOS_PROIBIDOS = ['senha', 'password', '12345', 'qwerty', 'admin', 'test
 function checkPassword(senha) {
   const v = senha || ''
   return {
-    length: v.length >= 12,
+    length: v.length >= 8,
     upper: /[A-Z]/.test(v),
     lower: /[a-z]/.test(v),
     number: /\d/.test(v),
@@ -101,12 +101,14 @@ const UsuarioCard = ({ u, onAprovar, onRecusar, onDeletar, onVisualizar, showApr
         </div>
       </div>
       <div className="flex gap-2 ml-4">
-        <button
-          onClick={() => onVisualizar(u)}
-          className="px-3 py-1.5 rounded-lg text-xs font-bold border border-indigo-200 text-indigo-600 hover:bg-indigo-50"
-        >
-          Ver/Editar
-        </button>
+        {(!isAdmin || isCurrentUser) && (
+          <button
+            onClick={() => onVisualizar(u)}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold border border-indigo-200 text-indigo-600 hover:bg-indigo-50"
+          >
+            Ver/Editar
+          </button>
+        )}
         {showAprovar && (
           <>
             <button onClick={() => onRecusar(u.id)} className="px-3 py-1.5 rounded-lg text-xs font-bold border border-red-200 text-red-500 hover:bg-red-50">Recusar</button>
