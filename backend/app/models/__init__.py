@@ -8,6 +8,7 @@ from .discipline import Disciplina
 from .course import Curso
 from .period import Periodo
 from .solicitation import Solicitacao
+from .refresh_token import RefreshToken
 
 __all__ = [
     "Usuario",
@@ -19,5 +20,6 @@ __all__ = [
     "Disciplina",
     "Curso",
     "Periodo",
-    "Solicitacao"
+    "Solicitacao",
+    "RefreshToken",
 ]
