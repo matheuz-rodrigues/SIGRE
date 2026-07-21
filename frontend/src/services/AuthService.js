@@ -68,10 +68,6 @@ export const saveSession = (userData) => {
   localStorage.setItem('userEmail', userData.email)
   localStorage.setItem('userId', userData.id)
 
-  if (userData.refresh_token) {
-    localStorage.setItem('refresh_token', userData.refresh_token)
-  }
-
   if (userData.papel === 'admin') {
     localStorage.setItem('isAdminAuthenticated', 'true')
   }
@@ -82,18 +78,10 @@ export const saveSession = (userData) => {
  */
 export const clearSession = () => {
   localStorage.removeItem('access_token')
-  localStorage.removeItem('refresh_token')
   localStorage.removeItem('userRole')
   localStorage.removeItem('userName')
   localStorage.removeItem('userEmail')
   localStorage.removeItem('userId')
   localStorage.removeItem('isAdminAuthenticated')
   localStorage.removeItem('adminUser')
-}
-
-/**
- * Retorna o refresh token armazenado no localStorage
- */
-export const getRefreshToken = () => {
-  return localStorage.getItem('refresh_token')
 }

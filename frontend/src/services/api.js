@@ -1,5 +1,5 @@
 import axios from "axios";
-import { getRefreshToken, clearSession } from "./AuthService";
+import { clearSession } from "./AuthService";
 
 const api = axios.create({
     baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
@@ -47,14 +47,6 @@ api.interceptors.response.use(
             return Promise.reject(error)
         }
 
-        const refreshToken = getRefreshToken()
-
-        if (!refreshToken) {
-            clearSession()
-            window.dispatchEvent(new CustomEvent('session-expired'))
-            return Promise.reject(error)
-        }
-
         if (isRefreshing) {
             return new Promise((resolve, reject) => {
                 failedQueue.push({ resolve, reject })
@@ -72,16 +64,13 @@ api.interceptors.response.use(
         try {
             const response = await axios.post(
                 `${api.defaults.baseURL}/auth/refresh`,
-                { refresh_token: refreshToken },
-                { headers: { 'Content-Type': 'application/json' } }
+                {},
+                { withCredentials: true }
             )
 
-            const { access_token, refresh_token: newRefreshToken } = response.data
+            const { access_token } = response.data
 
             localStorage.setItem('access_token', access_token)
-            if (newRefreshToken) {
-                localStorage.setItem('refresh_token', newRefreshToken)
-            }
 
             processQueue(null, access_token)
 
