@@ -16,7 +16,8 @@ class Settings(BaseSettings):
 
 	JWT_SECRET: str = "change_me_super_secret"
 	JWT_ALGORITHM: str = "HS256"
-	JWT_EXPIRES_MINUTES: int = 120
+	JWT_ACCESS_EXPIRES_MINUTES: int = 15 
+	JWT_REFRESH_EXPIRES_DAYS: int = 7 
 
 	# Senha do administrador inicial (campusananindeua@uepa.br).
 	# Obrigatória; se vazia o admin não é criado no startup.

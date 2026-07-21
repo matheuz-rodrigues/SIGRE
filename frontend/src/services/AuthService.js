@@ -84,5 +84,4 @@ export const clearSession = () => {
   localStorage.removeItem('userId')
   localStorage.removeItem('isAdminAuthenticated')
   localStorage.removeItem('adminUser')
-
 }

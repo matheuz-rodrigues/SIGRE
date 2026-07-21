@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from app.models.user import Usuario
 from app.schemas.user import UserCreate
-from app.services.auth.security import verify_password, hash_password, create_access_token
+from app.services.auth.security import verify_password, hash_password, create_access_token, create_refresh_token
 
 # Mapeamento de Papéis
 ROLE_MAP = {
@@ -35,6 +35,7 @@ class AuthService:
 
         papel = REVERSE_ROLE_MAP.get(user.tipo_usuario, "aluno")
         access_token = create_access_token(subject=user.email, user_id=user.id, role=user.tipo_usuario)
+        refresh_token = create_refresh_token(db, user.id)
         
         return {
             "id": user.id,
@@ -43,6 +44,7 @@ class AuthService:
             "username": user.username,
             "papel": papel,
             "access_token": access_token,
+            "refresh_token": refresh_token,
             "token_type": "bearer"
         }
 
