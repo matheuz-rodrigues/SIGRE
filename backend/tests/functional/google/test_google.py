@@ -109,7 +109,7 @@ def test_get_credentials_refreshes_expired_token_and_persists(db_session):
     mock_creds.refresh.assert_called_once()
     db_session.refresh(row)
     assert row.access_token == "fresh_token"
-    assert row.expiry == new_expiry
+    assert row.expiry == new_expiry.replace(tzinfo=None)
 
 
 def test_get_credentials_returns_none_when_refresh_fails(db_session):
