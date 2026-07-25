@@ -9,6 +9,7 @@ const lbl = "block text-[11px] font-bold text-gray-400 uppercase tracking-widest
 const TIPOS_EVENTO = [
     'Seminário',
     'Workshop',
+    'Aula',
     'Palestra',
     'Defesa de TCC',
     'Reunião',
