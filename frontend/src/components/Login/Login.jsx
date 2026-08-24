@@ -235,7 +235,7 @@ const Login = ({ onLoginSuccess }) => {
 
                     {/* Logo */}
                     <div className="flex items-center gap-3 mb-6">
-                        <img src={logo} alt="Logo UEPA" className="h-10 object-contain" />
+                        <img src={logo} alt="Logo UEPA" className="h-20 object-contain" />
                         <div>
                             <p className="text-xs font-bold tracking-widest uppercase" style={{ color: '#1c1aa3' }}>SIGRA</p>
                             <p className="text-[10px] text-gray-400">Sistema Integrado de Gestão de Reservas Acadêmicas</p>

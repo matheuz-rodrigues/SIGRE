@@ -63,8 +63,9 @@ class AuthService:
         
         # Admin sempre aprovado (ou conforme regra de negócio, mas aqui vamos deixar pendente se for via cadastro aberto)
         # No frontend admin não cadastra, então assumimos aluno/professor
+        # Técnico segue a mesma regra do professor: fica pendente até um admin aprovar.
         status_val = "pendente"
-        if tipo in (3, 4):  # admin e tecnico_adm já entram aprovados
+        if tipo == 3:  # admin já entra aprovado
             status_val = "aprovado"
 
         user_obj = Usuario(

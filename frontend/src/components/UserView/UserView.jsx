@@ -81,7 +81,9 @@ const UserView = ({ userRole, onLogOut }) => {
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex justify-between items-center py-4">
                         <div className="flex items-center gap-4">
-                            <img src={logo} alt="Logo UEPA" className="h-10 object-contain" />
+                            <div className="bg-white rounded-lg px-3 py-2 shadow-sm">
+                                <img src={logo} alt="Logo UEPA" className="h-16 object-contain" />
+                            </div>
                             <div className="hidden sm:block w-px h-8 bg-white/20" />
                             <div className="hidden sm:block">
                                 <p className="text-xs font-bold text-blue-200 tracking-widest uppercase">SIGRA</p>
