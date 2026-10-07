@@ -41,6 +41,10 @@ services:
   frontend:
     build:
       context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-}
+        VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:-}
+        VITE_CADASTRO_PUBLICO: ${VITE_CADASTRO_PUBLICO:-true}
     container_name: sigra_frontend
     restart: unless-stopped
     ports:

@@ -1,11 +1,20 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useSchedule } from '../Schedule/ScheduleContext'
 import { generateICS, downloadICS } from '../../utils/exportICS'
 import {
-    X, Download, Calendar, Building2, BookOpen,
+    X, Download, Calendar, Building2,
     GraduationCap, CheckCircle2, Filter, FileDown, Info
 } from 'lucide-react'
 import { diasSemana } from '../../data/data'
+
+const siglaCurso = (c) => c?.siglaCurso || c?.sigla || ''
+const nomeCurso = (c) => c?.nomeCurso || c?.nome || ''
+const nomeSala = (s) => s?.nome || s?.nomeSala || s?.codigo_sala || ''
+const tipoSala = (s) => s?.tipo || s?.tipoSala || ''
+const slug = (str) => String(str || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '')
+    .toLowerCase()
 
 const ExportICSModal = ({ onClose }) => {
     const { horarios, salas, cursos, periodos, periodoAtivo } = useSchedule()
@@ -41,18 +50,22 @@ const ExportICSModal = ({ onClose }) => {
         if (horariosFiltrados.length === 0) return
 
         const periodo = periodos.find(p => p.id === parseInt(filters.periodoId))
+        const curso = cursos.find(c => c.id === parseInt(filters.cursoId))
+        const sala = salas.find(s => s.id === parseInt(filters.salaId))
         const calName = [
             'SCA UEPA',
             periodo ? periodo.semestre : '',
-            cursos.find(c => c.id === parseInt(filters.cursoId))?.sigla || cursos.find(c => c.id === parseInt(filters.cursoId))?.siglaCurso || '',
-            salas.find(s => s.id === parseInt(filters.salaId))?.nome || salas.find(s => s.id === parseInt(filters.salaId))?.nomeSala || salas.find(s => s.id === parseInt(filters.salaId))?.codigo_sala || '',
+            siglaCurso(curso),
+            nomeSala(sala),
         ].filter(Boolean).join(' — ')
 
         const filename = [
             'sca-uepa',
-            periodo?.semestre?.replace(/\./g, '-') || '',
-            filters.diaSemana || '',
-        ].filter(Boolean).join('_').toLowerCase()
+            slug(periodo?.semestre),
+            slug(siglaCurso(curso)),
+            slug(nomeSala(sala)),
+            slug(filters.diaSemana),
+        ].filter(Boolean).join('_')
 
         const ics = generateICS(horariosFiltrados, salas, cursos, calName)
         downloadICS(ics, filename)
@@ -84,14 +97,14 @@ const ExportICSModal = ({ onClose }) => {
                     <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 text-left mb-6 space-y-3">
                         <p className="text-xs font-bold text-blue-700 uppercase tracking-wide">Como importar:</p>
                         {[
-                            { app: 'Google Calendar', step: 'Configurações → Importar e exportar → Importar' },
-                            { app: 'Apple Calendar', step: 'Arquivo → Importar → selecione o .ics' },
-                            { app: 'Outlook', step: 'Adicionar calendário → Carregar do arquivo' },
-                        ].map(({ app, step }) => (
+                            { app: 'Google Calendar', passos: 'Configurações → Importar e exportar → Importar' },
+                            { app: 'Apple Calendar', passos: 'Arquivo → Importar → selecione o .ics' },
+                            { app: 'Outlook', passos: 'Adicionar calendário → Carregar do arquivo' },
+                        ].map(({ app, passos }) => (
                             <div key={app} className="flex items-start gap-2.5">
                                 <div>
                                     <p className="text-xs font-bold text-gray-700">{app}</p>
-                                    <p className="text-xs text-gray-400">{step}</p>
+                                    <p className="text-xs text-gray-400">{passos}</p>
                                 </div>
                             </div>
                         ))}
@@ -142,7 +155,7 @@ const ExportICSModal = ({ onClose }) => {
 
                 {/* Período */}
                 <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1.5">
+                    <label className="text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1.5">
                         <Calendar size={12} className="text-blue-500" /> Período letivo
                     </label>
                     <select className={inputClass} value={filters.periodoId} onChange={e => set('periodoId', e.target.value)}>
@@ -158,20 +171,20 @@ const ExportICSModal = ({ onClose }) => {
                 <div className="grid grid-cols-2 gap-3">
                     {/* Curso */}
                     <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1.5">
+                        <label className="text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1.5">
                             <GraduationCap size={12} className="text-violet-500" /> Curso
                         </label>
                         <select className={inputClass} value={filters.cursoId} onChange={e => set('cursoId', e.target.value)}>
                             <option value="">Todos</option>
                             {cursos.map(c => (
-                                <option key={c.id} value={c.id}>{c.siglaCurso || c.sigla} — {c.nomeCurso || c.nome}</option>
+                                <option key={c.id} value={c.id}>{[siglaCurso(c), nomeCurso(c)].filter(Boolean).join(' — ')}</option>
                             ))}
                         </select>
                     </div>
 
                     {/* Dia da semana */}
                     <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1.5">
+                        <label className="text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1.5">
                             <Calendar size={12} className="text-indigo-500" /> Dia da semana
                         </label>
                         <select className={inputClass} value={filters.diaSemana} onChange={e => set('diaSemana', e.target.value)}>
@@ -183,13 +196,13 @@ const ExportICSModal = ({ onClose }) => {
 
                 {/* Sala */}
                 <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1.5">
+                    <label className="text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1.5">
                         <Building2 size={12} className="text-emerald-500" /> Sala / Laboratório
                     </label>
                     <select className={inputClass} value={filters.salaId} onChange={e => set('salaId', e.target.value)}>
                         <option value="">Todas as salas</option>
                         {salas.map(s => (
-                            <option key={s.id} value={s.id}>{s.nome || s.nomeSala || s.codigo_sala} — {s.tipo || s.tipoSala}</option>
+                            <option key={s.id} value={s.id}>{[nomeSala(s), tipoSala(s)].filter(Boolean).join(' — ')}</option>
                         ))}
                     </select>
                 </div>
@@ -237,18 +250,24 @@ const ExportICSModal = ({ onClose }) => {
 }
 
 // Wrapper do overlay
-const Overlay = ({ children, onClose }) => (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-        style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', animation: 'fadeIn 0.15s ease' }}>
-        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-7"
-            style={{ animation: 'fadeInUp 0.2s ease' }}>
-            {children}
+const Overlay = ({ children, onClose }) => {
+    useEffect(() => {
+        const onKey = (e) => { if (e.key === 'Escape') onClose() }
+        window.addEventListener('keydown', onKey)
+        return () => window.removeEventListener('keydown', onKey)
+    }, [onClose])
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            onClick={onClose}
+            style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', animation: 'fadeIn 0.15s ease' }}>
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-7"
+                onClick={(e) => e.stopPropagation()}
+                style={{ animation: 'fadeInUp16 0.2s ease' }}>
+                {children}
+            </div>
         </div>
-        <style>{`
-            @keyframes fadeIn    { from { opacity: 0 } to { opacity: 1 } }
-            @keyframes fadeInUp  { from { opacity: 0; transform: translateY(16px) } to { opacity: 1; transform: translateY(0) } }
-        `}</style>
-    </div>
-)
+    )
+}
 
 export default ExportICSModal

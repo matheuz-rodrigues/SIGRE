@@ -1,10 +1,10 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import * as XLSX from 'xlsx'
 import api from '../../services/api'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import {
-    Upload, Download, X, CheckCircle2, AlertCircle,
+    Upload, X, CheckCircle2, AlertCircle,
     FileSpreadsheet, Users, Building2, BookOpen, GraduationCap,
     ChevronRight, Loader2, FileDown, History, UserCheck, FileText
 } from 'lucide-react'
@@ -63,31 +63,13 @@ const ABAS_CONFIG = {
     },
 }
 
-// ─── Gera planilha modelo ─────────────────────────────────────────────
-const baixarModelo = () => {
-    const wb = XLSX.utils.book_new()
-    const exemplos = {
-        Professores: [['Nome', 'Email'], ['João Silva', 'joao.silva@uepa.br'], ['Maria Souza', 'maria.souza@uepa.br']],
-        Disciplinas: [['Nome', 'Codigo'], ['Cálculo I', 'MAT001'], ['Física Geral', 'FIS001']],
-        Cursos: [['Nome', 'Sigla', 'Cor'], ['Engenharia de Software', 'BES', '#3b82f6'], ['Licenciatura em Matemática', 'MAT', '#f59e0b']],
-        Salas: [['Nome', 'Tipo'], ['Sala 01', 'Sala de Aula'], ['Lab 01', 'Laboratório']],
-    }
-    Object.entries(exemplos).forEach(([nome, dados]) => {
-        const ws = XLSX.utils.aoa_to_sheet(dados)
-        ws['!cols'] = [{ wch: 30 }, { wch: 25 }, { wch: 15 }]
-        XLSX.utils.book_append_sheet(wb, ws, nome)
-    })
-    XLSX.writeFile(wb, 'modelo-importacao-sca-uepa.xlsx')
-}
-
 // ─── Componente principal ─────────────────────────────────────────────
 const ImportarPlanilha = ({ onClose, onImportado }) => {
-    const inputRef = useRef(null)
     const [etapa, setEtapa] = useState('inicio') // inicio | preview | importando | resultado
     const [dadosPreview, setDadosPreview] = useState({})
     const [errosPreview, setErrosPreview] = useState({})
     const [resultado, setResultado] = useState({})
-    const [nomeArquivo, setNomeArquivo] = useState('')
+    const [nomeArquivo] = useState('')
 
     // Novos estados para controle de exportação
     const [exportando, setExportando] = useState(null)
@@ -451,7 +433,6 @@ const ImportarPlanilha = ({ onClose, onImportado }) => {
                     )}
                 </div>
             </div>
-            <style>{`@keyframes fadeInUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}`}</style>
         </div>
     )
 }

@@ -3,7 +3,7 @@ import { useSchedule } from '../Schedule/ScheduleContext'
 import { getCalendarEvents } from '../../services/GoogleServices'
 import {
     ChevronLeft, ChevronRight, Building2, X,
-    CheckCircle2, XCircle, Clock, BookOpen, User, Plus, Trash2, Filter
+    CheckCircle2, XCircle, Clock, User, Plus, Trash2, Filter
 } from 'lucide-react'
 
 // Mapeamento nome do dia (PT) → índice JS (0=Dom, 1=Seg...)
@@ -33,14 +33,18 @@ function buildCalendarGrid(year, month) {
     return grid
 }
 
-// Verifica se uma data está dentro do período de vigência do horário
-function dateInRange(date, dataInicio, dataFim) {
-    if (!dataInicio && !dataFim) return true
-    const d = date.getTime()
-    const ini = dataInicio ? new Date(dataInicio + 'T00:00:00').getTime() : -Infinity
-    const fim = dataFim ? new Date(dataFim + 'T23:59:59').getTime() : Infinity
-    return d >= ini && d <= fim
+// Verifica se uma data (YYYY-MM-DD) está dentro do período de vigência do horário
+function dateInRange(dStr, dataInicio, dataFim) {
+    if (dataInicio && dStr < dataInicio) return false
+    if (dataFim && dStr > dataFim) return false
+    return true
 }
+
+const formatYMD = (dt) =>
+    `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+
+// Datas "all-day" do Google vêm como YYYY-MM-DD: interpretar no fuso local (não UTC)
+const parseGoogleDate = (g) => g.dateTime ? new Date(g.dateTime) : new Date(g.date + 'T00:00:00')
 
 const MonthCalendar = ({ onAddForDate, isAdmin = false }) => {
     const { horarios, salas, cursos, professores, removerHorario, refreshCount } = useSchedule()
@@ -56,17 +60,21 @@ const MonthCalendar = ({ onAddForDate, isAdmin = false }) => {
 
     useEffect(() => {
         if (!isAdmin) return;
+        let cancelled = false
         const anchor = new Date(viewYear, viewMonth, 15)
         getCalendarEvents({ view: 'month', anchor: anchor.toISOString() })
             .then((r) => {
+                if (cancelled) return
                 const items = Array.isArray(r.items) ? r.items : []
                 setGoogleEventCount(items.length)
                 setGoogleEvents(items)
             })
             .catch(() => {
+                if (cancelled) return
                 setGoogleEventCount(null)
                 setGoogleEvents([])
             })
+        return () => { cancelled = true }
     }, [viewYear, viewMonth, isAdmin, refreshCount])
 
     // Navegar mês
@@ -83,36 +91,34 @@ const MonthCalendar = ({ onAddForDate, isAdmin = false }) => {
 
     const grid = useMemo(() => buildCalendarGrid(viewYear, viewMonth), [viewYear, viewMonth])
 
-    const mapGoogleEvent = (ev) => {
+    const googleMapeados = useMemo(() => googleEvents.map((ev) => {
         const priv = (ev.extendedProperties?.private) || {}
-        const start = new Date(ev.start.dateTime || ev.start.date)
-        const end = new Date(ev.end.dateTime || ev.end.date)
-
-        const f = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+        const start = parseGoogleDate(ev.start)
+        const end = parseGoogleDate(ev.end)
+        // No Google, o fim de um evento all-day é exclusivo
+        const endDay = ev.end.date && !ev.end.dateTime ? new Date(end.getTime() - 24 * 60 * 60 * 1000) : end
 
         return {
             id: `google-${ev.id}`,
             googleId: ev.id,
             localId: priv.local_reservation_id || null,
-            salaId: priv.fk_sala || 0,
+            salaId: parseInt(priv.fk_sala) || null,
             cursoId: parseInt(priv.fk_curso) || null,
             professorId: parseInt(priv.fk_professor) || null,
             disciplina: ev.summary || 'Evento Externo',
             professor: priv.professor_nome || '',
             horarioInicio: start.getHours().toString().padStart(2, '0') + ':' + start.getMinutes().toString().padStart(2, '0'),
             horarioFim: end.getHours().toString().padStart(2, '0') + ':' + end.getMinutes().toString().padStart(2, '0'),
-            dataInicio: f(start),
-            dataFim: f(end),
+            dataInicio: formatYMD(start),
+            dataFim: formatYMD(endDay),
             isGoogleOnly: !priv.local_reservation_id,
-            isLongEvent: (end - start) > 24 * 60 * 60 * 1000
         }
-    }
+    }), [googleEvents])
 
     const getOcupacoesDoDia = (date) => {
         if (!date) return []
         const diaSemanaIdx = date.getDay()
         const nomeDia = Object.keys(DIA_SEMANA_MAP).find(k => DIA_SEMANA_MAP[k] === diaSemanaIdx)
-        const dTimestamp = date.getTime()
 
         const ocupaDia = (h) => {
             if (!h) return false
@@ -121,19 +127,16 @@ const MonthCalendar = ({ onAddForDate, isAdmin = false }) => {
             if (filterProfessor && h.professorId !== parseInt(filterProfessor)) return false
 
             // Converte para data simples YYYY-MM-DD para comparação sem hora
-            const y = date.getFullYear()
-            const m = String(date.getMonth() + 1).padStart(2, '0')
-            const d = String(date.getDate()).padStart(2, '0')
-            const dStr = `${y}-${m}-${d}`
+            const dStr = formatYMD(date)
             const iniStr = h.dataInicio
             const fimStr = h.dataFim
 
-            if (dStr < iniStr || dStr > fimStr) return false
+            if (!dateInRange(dStr, iniStr, fimStr)) return false
 
             // Se for evento recorrente (tem diaSemana), precisa bater
             // Exceto se for um evento longo (mais de 1 dia de intervalo)
             const isRecurrent = !!h.diaSemana
-            const isLong = iniStr !== fimStr
+            const isLong = !!iniStr && !!fimStr && iniStr !== fimStr
 
             if (isRecurrent && !isLong) {
                 return h.diaSemana === nomeDia
@@ -144,8 +147,7 @@ const MonthCalendar = ({ onAddForDate, isAdmin = false }) => {
 
         const locais = horarios.filter(ocupaDia)
         const idsLocais = new Set(horarios.map(h => String(h.id).split(':')[0]))
-        const googleFiltrados = googleEvents
-            .map(mapGoogleEvent)
+        const googleFiltrados = googleMapeados
             .filter(ge => {
                 if (ge.localId && idsLocais.has(String(ge.localId))) return false
                 return ocupaDia(ge)
@@ -157,14 +159,14 @@ const MonthCalendar = ({ onAddForDate, isAdmin = false }) => {
     const getDayStats = (date) => {
         if (!date) return null
         const ocupacoes = getOcupacoesDoDia(date)
-        const salasOcupadas = new Set(ocupacoes.map(h => h.salaId))
+        const salasOcupadas = new Set(ocupacoes.filter(h => h.salaId).map(h => String(h.salaId)))
         const numOcupadas = salasOcupadas.size
         const totalSalas = filterSala ? 1 : Math.max(salas.length, numOcupadas, 1)
 
         return {
-            ocupadas: numOcupadas,
+            ocupadas: Math.min(numOcupadas, totalSalas),
             total: totalSalas,
-            taxa: numOcupadas / totalSalas,
+            taxa: Math.min(1, numOcupadas / totalSalas),
             horarios: ocupacoes,
         }
     }
@@ -535,8 +537,8 @@ const MonthCalendar = ({ onAddForDate, isAdmin = false }) => {
                                                         <div className="flex flex-col items-end gap-1">
                                                             {curso && (
                                                                 <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md shrink-0"
-                                                                    style={{ background: curso.cor + '20', color: curso.cor }}>
-                                                                    {curso.sigla}
+                                                                    style={{ background: (curso.cor || '#6366f1') + '20', color: curso.cor || '#6366f1' }}>
+                                                                    {curso.siglaCurso || curso.sigla}
                                                                 </span>
                                                             )}
                                                             {isAdmin && removerHorario && !h.isGoogleOnly && (
@@ -556,13 +558,6 @@ const MonthCalendar = ({ onAddForDate, isAdmin = false }) => {
                     </div>
                 )}
             </div>
-
-            <style>{`
-                @keyframes slideInRight {
-                    from { opacity: 0; transform: translateX(16px); }
-                    to   { opacity: 1; transform: translateX(0); }
-                }
-            `}</style>
         </div>
     )
 }

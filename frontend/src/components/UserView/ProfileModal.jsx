@@ -152,7 +152,7 @@ const ProfileModal = ({ userRole, onClose }) => {
         >
             <div
                 className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[92vh] overflow-hidden flex flex-col"
-                style={{ animation: 'fadeInUp 0.25s ease' }}
+                style={{ animation: 'fadeInUp20 0.25s ease' }}
             >
                 {/* Header */}
                 <div
@@ -377,8 +377,6 @@ const ProfileModal = ({ userRole, onClose }) => {
                     </div>
                 )}
             </div>
-
-            <style>{`@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}`}</style>
         </div>
     )
 }

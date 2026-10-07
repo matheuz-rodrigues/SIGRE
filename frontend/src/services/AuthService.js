@@ -2,6 +2,13 @@ import api from './api'
 
 const ROLE_BY_TIPO = { 1: 'aluno', 2: 'professor', 3: 'admin' }
 
+// ── MFA (segundo fator) ──────────────────────────────────────────────────────
+// Contrato ainda não fechado pelo backend — ajustar estes valores quando definido.
+export const MFA_VERIFY_ENDPOINT = '/auth/mfa/verify'
+export const MFA_RESEND_ENDPOINT = '/auth/mfa/resend'
+export const MFA_REQUIRED_FIELD = 'mfa_required' // chave no corpo de /auth/login que indica 2º fator pendente
+export const MFA_TOKEN_FIELD = 'mfa_token'       // identificador do desafio, retornado por /auth/login e reenviado na verificação
+
 /**
  * Perfil do usuário autenticado — GET /users/me
  */
@@ -44,6 +51,25 @@ export const applyUserProfile = (me) => {
  */
 export const login = async (username, senha) => {
   const res = await api.post('/auth/login', { username, password: senha })
+  return res.data
+}
+
+/**
+ * Verificação do código de MFA — POST {MFA_VERIFY_ENDPOINT}
+ * Envia: { mfa_token, code }
+ * Recebe: mesmo formato de sucesso de login — { id, nome, email, username, papel, access_token, token_type }
+ */
+export const verifyMfaCode = async (mfaToken, code) => {
+  const res = await api.post(MFA_VERIFY_ENDPOINT, { [MFA_TOKEN_FIELD]: mfaToken, code })
+  return res.data
+}
+
+/**
+ * Reenvio do código de MFA — POST {MFA_RESEND_ENDPOINT}
+ * Envia: { mfa_token }
+ */
+export const resendMfaCode = async (mfaToken) => {
+  const res = await api.post(MFA_RESEND_ENDPOINT, { [MFA_TOKEN_FIELD]: mfaToken })
   return res.data
 }
 
