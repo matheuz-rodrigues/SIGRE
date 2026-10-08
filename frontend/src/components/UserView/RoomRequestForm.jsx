@@ -1,3 +1,4 @@
+import { toast } from 'sonner'
 import { useState, useEffect } from 'react'
 import { useSchedule } from '../Schedule/ScheduleContext'
 import api from '../../services/api'
@@ -111,7 +112,7 @@ const RoomRequestForm = ({ onClose, userRole, onSolicitacaoCriada }) => {
     const handleSubmit = async (e) => {
         e.preventDefault()
         if (form.horarioInicio >= form.horarioFim) {
-            alert('O horário de término deve ser maior que o de início.')
+            toast.warning('O horário de término deve ser maior que o de início.')
             return
         }
         if (verificarConflito()) return

@@ -1,3 +1,5 @@
+import { toast } from 'sonner'
+import { confirmAction } from '../common/confirmStore'
 import { useState, useEffect } from 'react'
 import api from '../../services/api'
 import { useSchedule } from '../Schedule/ScheduleContext'
@@ -184,22 +186,22 @@ const AdminPainel = () => {
         try {
             await api.patch(`/users/approve/${id}`)
             carregarUsuarios()
-        } catch (err) { alert('Erro ao aprovar usuário.') }
+        } catch { toast.error('Erro ao aprovar usuário.') }
     }
 
     const handleRecusarUsuario = async (id) => {
         try {
             await api.patch(`/users/refuse/${id}`)
             carregarUsuarios()
-        } catch (err) { alert('Erro ao processar alteração.') }
+        } catch  { toast.error('Erro ao processar alteração.') }
     }
 
     const handleDeletarUsuario = async (id) => {
-        if (!window.confirm('Excluir este usuário permanentemente?')) return
+        if (!(await confirmAction({ title: 'Excluir usuário?', description: 'O usuário será excluído permanentemente.' }))) return
         try {
             await api.delete(`/users/${id}`)
             carregarUsuarios()
-        } catch (err) { alert('Erro ao excluir.') }
+        } catch { toast.error('Erro ao excluir.') }
     }
 
     const handleCheckAprovar = async (solicitacao) => {
@@ -217,7 +219,7 @@ const AdminPainel = () => {
             carregarSolicitacoes();
             setConflito(null);
             setExpandedId(null);
-        } catch (err) { alert('Erro ao finalizar aprovação.'); }
+        } catch  { toast.error('Erro ao finalizar aprovação.'); }
         finally { setLoadingAprovar(null) }
     }
 
@@ -231,7 +233,7 @@ const AdminPainel = () => {
             })
             carregarSolicitacoes()
             setExpandedId(null)
-        } catch (err) { alert('Erro ao recusar solicitação.') }
+        } catch  { toast.error('Erro ao recusar solicitação.') }
         finally { setLoadingRecusar(null) }
     }
 

@@ -1,3 +1,5 @@
+import { toast } from 'sonner'
+import { confirmAction } from '../components/common/confirmStore'
 import { useState, useEffect } from 'react'
 import { useSchedule } from '../components/Schedule/ScheduleContext'
 import * as ProfessorService from '../services/ProfessorService'
@@ -99,7 +101,7 @@ export const useDataManager = (initialTab = 'professores') => {
             console.error(err)
             const d = err.response?.data?.detail
             const msg = typeof d === 'string' ? d : err.response?.data?.message
-            alert(msg || 'Erro ao salvar. Verifique os dados.')
+            toast.error(msg || 'Erro ao salvar. Verifique os dados.')
         } finally {
             setLoading(false)
         }
@@ -107,7 +109,7 @@ export const useDataManager = (initialTab = 'professores') => {
 
     const handleDelete = async (id) => {
         const service = SERVICES[activeTab]
-        if (!window.confirm('Tem certeza que deseja excluir?')) return
+        if (!(await confirmAction({ title: 'Excluir item?', description: 'Tem certeza que deseja excluir? Esta ação não pode ser desfeita.' }))) return
         try {
             setLoading(true)
             await service.delete(id)
@@ -118,7 +120,7 @@ export const useDataManager = (initialTab = 'professores') => {
         } catch (err) {
             const d = err.response?.data?.detail
             const msg = typeof d === 'string' ? d : 'Erro ao excluir. Este item pode estar em uso.'
-            alert(msg)
+            toast.error(msg)
         } finally {
             setLoading(false)
         }
@@ -142,7 +144,7 @@ export const useDataManager = (initialTab = 'professores') => {
                 return newItem.id || newItem.idCurso
             }
         } catch (err) {
-            alert('Erro ao criar item. Verifique se já existe.')
+            toast.error('Erro ao criar item. Verifique se já existe.')
             throw err
         }
     }

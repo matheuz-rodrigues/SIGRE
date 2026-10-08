@@ -1,3 +1,4 @@
+import { toast } from 'sonner'
 import { useState } from 'react'
 import * as XLSX from 'xlsx'
 import api from '../../services/api'
@@ -193,7 +194,7 @@ const ImportarPlanilha = ({ onClose, onImportado }) => {
 
         } catch (err) {
             console.error(err)
-            alert(`Erro ao exportar relatório. Verifique se o servidor está rodando.`)
+            toast.error(`Erro ao exportar relatório. Verifique se o servidor está rodando.`)
         } finally {
             setExportando(null)
         }

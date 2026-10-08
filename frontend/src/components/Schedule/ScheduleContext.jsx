@@ -1,3 +1,4 @@
+import { toast } from 'sonner'
 import { createContext, useContext, useState, useEffect } from 'react';
 import api from '../../services/api';
 
@@ -225,7 +226,7 @@ export const ScheduleProvider = ({ children }) => {
             return response.data.id;
         } catch (error) {
             console.error(`Erro ao criar:`, error);
-            alert("Erro ao salvar.");
+            toast.error("Erro ao salvar.");
             return null;
         }
     };
@@ -242,17 +243,17 @@ export const ScheduleProvider = ({ children }) => {
             console.log("POST /reservations/", body);
 
             if (!body.fk_usuario) {
-                alert('Sessão inválida: faça login novamente.');
+                toast.warning('Sessão inválida: faça login novamente.');
                 return;
             }
             await api.post('/reservations/', body);
             recarregarDados();
-            alert("Horário salvo!");
+            toast.success("Horário salvo!");
             return true;
         } catch (error) {
             console.error(error);
             const msg = error.response?.data?.detail || "Erro ao salvar horário.";
-            alert(typeof msg === 'string' ? msg : "Erro ao salvar horário. Verifique os dados.");
+            toast.error(typeof msg === 'string' ? msg : "Erro ao salvar horário. Verifique os dados.");
             return false;
         }
     };
@@ -265,12 +266,12 @@ export const ScheduleProvider = ({ children }) => {
 
             await api.patch(`/reservations/${baseId}`, body);
             recarregarDados();
-            alert("Horário atualizado!");
+            toast.success("Horário atualizado!");
             return true;
         } catch (error) {
             console.error(error);
             const msg = error.response?.data?.detail || "Erro ao atualizar.";
-            alert(typeof msg === 'string' ? msg : "Erro ao atualizar.");
+            toast.error(typeof msg === 'string' ? msg : "Erro ao atualizar.");
             return false;
         }
     }
@@ -286,8 +287,8 @@ export const ScheduleProvider = ({ children }) => {
             const query = action === 'all' ? '?deleteSeries=true' : '?deleteSeries=false';
             await api.delete(`/reservations/${action === 'all' ? baseId : id}${query}`);
             recarregarDados();
-            alert("Excluído!");
-        } catch (error) { console.error(error); alert("Erro ao excluir."); }
+            toast.success("Excluído!");
+        } catch (error) { console.error(error); toast.error("Erro ao excluir."); }
     };
 
     const removerHorario = (id) => {

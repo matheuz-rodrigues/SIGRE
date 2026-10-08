@@ -1,3 +1,4 @@
+import { toast } from 'sonner'
 import { useState, useEffect, useCallback } from 'react'
 
 export const useScheduleForm = ({ 
@@ -125,7 +126,7 @@ export const useScheduleForm = ({
 
     const handleSubmit = async () => {
         if (form.horarioInicio >= form.horarioFim) {
-            alert('O horário de término deve ser maior que o de início.')
+            toast.warning('O horário de término deve ser maior que o de início.')
             return
         }
 
@@ -146,7 +147,7 @@ export const useScheduleForm = ({
             await onSave(payload)
         } catch (err) {
             console.error('Error in handleSubmit:', err)
-            alert('Não foi possível processar os dados do formulário. Verifique se todas as datas e horários estão corretos.')
+            toast.error('Não foi possível processar os dados do formulário. Verifique se todas as datas e horários estão corretos.')
         } finally {
             setIsSaving(false)
         }
