@@ -87,8 +87,9 @@ app = FastAPI(
 )
 
 # Ordem: o último adicionado é o mais externo (CORS precisa responder antes do CSRF)
-app.add_middleware(AuditMiddleware)
 app.add_middleware(CSRFMiddleware, allowed_origins=settings.allowed_origins)
+# Fora do CSRF para também registrar as requisições rejeitadas por ele
+app.add_middleware(AuditMiddleware)
 app.add_middleware(
     SessionMiddleware, 
     secret_key=settings.SESSION_SECRET,
