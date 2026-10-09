@@ -9,7 +9,7 @@ def validar_senha_forte(v: Optional[str]) -> Optional[str]:
     if not v:
         return v
         
-    if not re.match(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$", v):
+    if not re.match(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$", v):
         raise ValueError("A senha deve ter no mínimo 12 caracteres, incluindo maiúsculas, minúsculas, números e símbolos.")
     
     termos_proibidos = (

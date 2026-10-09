@@ -9,6 +9,10 @@ from app.try_database import get_db
 from app.schemas.user import UserCreate, UserUpdate, UserOut
 from app.services.entities.user_service import user_service
 from app.services.auth.rbac import get_current_user, require_role, require_role_exact, ROLE_ADMIN, ROLE_USER
+from app.services.auth import mfa
+
+# Campos que só um administrador pode alterar (impede autopromoção de papel/status)
+ADMIN_ONLY_FIELDS = {"tipo_usuario", "papel", "status"}
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -41,6 +45,9 @@ def update_user(
 ):
     if current_user.id != user_id and current_user.tipo_usuario != ROLE_ADMIN:
          raise HTTPException(status_code=403, detail="Sem permissão")
+
+    if current_user.tipo_usuario != ROLE_ADMIN and ADMIN_ONLY_FIELDS & payload.model_fields_set:
+        raise HTTPException(status_code=403, detail="Sem permissão para alterar papel ou status")
 
     if current_user.tipo_usuario == ROLE_ADMIN and current_user.id != user_id:
         target = user_service.get_by_id(db, user_id)
@@ -81,4 +88,20 @@ def delete_user(
     if user.tipo_usuario == ROLE_ADMIN:
         raise HTTPException(status_code=403, detail="Administradores não podem excluir outros administradores")
     user_service.repository.soft_delete(db, user)
+    return None
+
+
+@router.delete("/{user_id}/mfa", status_code=status.HTTP_204_NO_CONTENT)
+def reset_user_mfa(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _admin = Depends(require_role_exact(ROLE_ADMIN))
+):
+    """Remove o MFA (ex.: celular perdido); o usuário cadastra de novo no próximo login."""
+    user = user_service.get_by_id(db, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    if user.tipo_usuario == ROLE_ADMIN:
+        raise HTTPException(status_code=403, detail="O MFA de administradores é redefinido via scripts/reset_mfa.py")
+    mfa.reset(db, user_id)
     return None

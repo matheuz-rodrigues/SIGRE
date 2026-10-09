@@ -6,13 +6,23 @@ from app.config import get_settings
 from app.try_database import Base, engine
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
+from app.logging_config import configure_logging
+from app.middleware.audit import AuditMiddleware
+from app.middleware.csrf import CSRFMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.routers import (
     auth, users, rooms, reservations, calendar, google,
     room_types, dashboard, professors, disciplines,
     courses, reports, periods, solicitations
 )
 
-os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+settings = get_settings()
+settings.validate_for_production()
+configure_logging()
+
+# Transporte HTTP no OAuth só para desenvolvimento local (redirect em http://localhost)
+if settings.ENV == "development" and settings.GOOGLE_REDIRECT_URI.startswith("http://localhost"):
+    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +36,18 @@ def _seed_admin() -> None:
     from app.try_database import SessionLocal
     from app.models.user import Usuario
     from app.services.auth.security import hash_password
+    from app.schemas.user import validar_senha_forte
 
-    settings = get_settings()
     password = settings.ADMIN_SEED_PASSWORD.strip()
     if not password:
         logger.warning(
             "ADMIN_SEED_PASSWORD não definida — administrador padrão não foi criado."
         )
+        return
+    try:
+        validar_senha_forte(password)
+    except ValueError as exc:
+        logger.error("ADMIN_SEED_PASSWORD rejeitada (%s) — administrador padrão não foi criado.", exc)
         return
 
     db = SessionLocal()
@@ -62,27 +77,35 @@ async def lifespan(app: FastAPI):
     _seed_admin()
     yield
 
-settings = get_settings()
-app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
-origins = [
-    "http://localhost:8080",
-]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origin_regex="https?://.*",  
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+docs_enabled = not settings.is_production or settings.ENABLE_DOCS
+app = FastAPI(
+    title=settings.APP_NAME,
+    lifespan=lifespan,
+    docs_url="/docs" if docs_enabled else None,
+    redoc_url="/redoc" if docs_enabled else None,
+    openapi_url="/openapi.json" if docs_enabled else None,
 )
+
+# Ordem: o último adicionado é o mais externo (CORS precisa responder antes do CSRF)
+app.add_middleware(AuditMiddleware)
+app.add_middleware(CSRFMiddleware, allowed_origins=settings.allowed_origins)
 app.add_middleware(
     SessionMiddleware, 
-    secret_key=settings.JWT_SECRET,
+    secret_key=settings.SESSION_SECRET,
     session_cookie="sigre_session",
     same_site="lax",
-    https_only=False,
+    https_only=settings.is_production,
     max_age=3600
 )
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.allowed_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-CSRF-Token"],
+    expose_headers=["Retry-After"],
+)
+app.add_middleware(SecurityHeadersMiddleware, hsts=settings.is_production)
 
 app.include_router(solicitations.router)
 app.include_router(auth.router)

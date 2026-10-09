@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 import uuid
 
-from jose import jwt, JWTError
+import jwt
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
@@ -11,6 +11,12 @@ from app.models.refresh_token import RefreshToken
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 settings = get_settings()
+
+TOKEN_TYPE_ACCESS = "access"
+TOKEN_TYPE_MFA = "mfa"
+
+# Hash usado para gastar o mesmo tempo quando o usuário não existe (evita enumeração por tempo).
+_DUMMY_HASH = pwd_context.hash(uuid.uuid4().hex)
 
 
 def hash_password(plain_password: str) -> str:
@@ -21,18 +27,52 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 	return pwd_context.verify(plain_password, hashed_password)
 
 
+def verify_password_dummy(plain_password: str) -> None:
+	pwd_context.verify(plain_password, _DUMMY_HASH)
+
+
+def _encode(claims: dict, expires_delta: timedelta) -> str:
+	now = datetime.now(tz=timezone.utc)
+	payload = {
+		**claims,
+		"iss": settings.JWT_ISSUER,
+		"aud": settings.JWT_AUDIENCE,
+		"iat": now,
+		"nbf": now,
+		"exp": now + expires_delta,
+		"jti": uuid.uuid4().hex,
+	}
+	return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+
+
 def create_access_token(subject: str, user_id: int, role: int, expires_minutes: Optional[int] = None) -> str:
 	expires_delta = timedelta(minutes=expires_minutes or settings.JWT_ACCESS_EXPIRES_MINUTES)
-	expire = datetime.now(tz=timezone.utc) + expires_delta
-	to_encode = {"sub": subject, "uid": user_id, "role": role, "exp": expire}
-	return jwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+	claims = {"sub": subject, "uid": user_id, "role": role, "typ": TOKEN_TYPE_ACCESS}
+	return _encode(claims, expires_delta)
 
 
-def decode_token(token: str) -> Optional[dict]:
+def create_mfa_token(user_id: int) -> str:
+	"""Token curto que comprova a etapa da senha; só serve para /auth/mfa/*."""
+	claims = {"sub": str(user_id), "uid": user_id, "typ": TOKEN_TYPE_MFA}
+	return _encode(claims, timedelta(minutes=settings.JWT_MFA_EXPIRES_MINUTES))
+
+
+def decode_token(token: str, expected_type: str = TOKEN_TYPE_ACCESS) -> Optional[dict]:
+	"""Valida assinatura, algoritmo fixo, exp/nbf/iat, iss, aud e o tipo do token."""
 	try:
-		return jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
-	except JWTError:
+		payload = jwt.decode(
+			token,
+			settings.JWT_SECRET,
+			algorithms=[settings.JWT_ALGORITHM],
+			issuer=settings.JWT_ISSUER,
+			audience=settings.JWT_AUDIENCE,
+			options={"require": ["exp", "iat", "nbf", "iss", "aud", "sub", "jti"]},
+		)
+	except jwt.PyJWTError:
 		return None
+	if payload.get("typ") != expected_type:
+		return None
+	return payload
 
 
 def create_refresh_token(db: Session, user_id: int, expires_days: Optional[int] = None) -> str:
@@ -83,5 +123,3 @@ def rotate_refresh_token(db: Session, old_token: str, user_id: int) -> Optional[
 	if not revoked:
 		return None
 	return create_refresh_token(db, user_id)
-
-
