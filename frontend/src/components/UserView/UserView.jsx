@@ -39,7 +39,7 @@ const UserView = ({ userRole, onLogOut }) => {
     const pendentes = solicitacoes.filter(s => s.status === 'pendente').length
 
     const carregarSolicitacoes = async () => {
-        if (!localStorage.getItem('access_token')) return
+        if (!localStorage.getItem('userId')) return
         setLoading(true)
         try {
             const res = await api.get('/solicitations/mine')

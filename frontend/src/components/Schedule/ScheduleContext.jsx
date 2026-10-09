@@ -111,10 +111,8 @@ export const ScheduleProvider = ({ children }) => {
     const [periodoAtivo, setPeriodoAtivo] = useState(null);
 
     const recarregarDados = async () => {
-        const token = localStorage.getItem('access_token');
-        if (!token) return;
+        if (!localStorage.getItem('userId')) return;
 
-        console.log("Atualizando dados...");
         setLoading(true);
         try {
             const settled = await Promise.allSettled([
@@ -202,11 +200,6 @@ export const ScheduleProvider = ({ children }) => {
             setProfessores(normalize(resProfs.data, 'idProfessor'));
             setDisciplinas(normalize(resDiscs.data, 'idDisciplina'));
 
-            console.log("─── DADOS CARREGADOS ───");
-            console.table(resSalas.data);
-            console.table(resProfs.data);
-            console.table(resDiscs.data);
-
             setRefreshCount(c => c + 1);
         } catch (error) {
             console.error("Erro ao carregar dados:", error);
@@ -240,7 +233,6 @@ export const ScheduleProvider = ({ children }) => {
     const adicionarHorario = async (novoHorario) => {
         try {
             const body = buildReservationApiPayload(disciplinas, professores, novoHorario);
-            console.log("POST /reservations/", body);
 
             if (!body.fk_usuario) {
                 toast.warning('Sessão inválida: faça login novamente.');
@@ -262,7 +254,6 @@ export const ScheduleProvider = ({ children }) => {
         try {
             const baseId = String(id).split(':')[0];
             const body = buildReservationPatchPayload(disciplinas, professores, dados);
-            console.log(`PATCH /reservations/${baseId}`, body);
 
             await api.patch(`/reservations/${baseId}`, body);
             recarregarDados();

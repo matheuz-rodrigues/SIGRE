@@ -9,8 +9,8 @@ import MfaForm from './MfaForm'
 
 // ── Services ──────────────────────────────────────────────────────────────────
 import {
-    login, register, saveSession, fetchCurrentUser, applyUserProfile,
-    verifyMfaCode, resendMfaCode, MFA_REQUIRED_FIELD, MFA_TOKEN_FIELD,
+    login, register, saveSession, fetchCurrentUser, applyUserProfile, logout,
+    verifyMfaCode, startMfaSetup, MFA_REQUIRED_FIELD, MFA_SETUP_REQUIRED_FIELD, MFA_TOKEN_FIELD,
 } from '../../services/AuthService'
 import { getCourses } from '../../services/CourseService'
 
@@ -44,7 +44,7 @@ const Login = ({ onLoginSuccess }) => {
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
     const [retryAfter, setRetryAfter] = useState(0) // segundos restantes de bloqueio por rate limit; 0 = sem bloqueio
-    const [mfaChallenge, setMfaChallenge] = useState(null) // { mfaToken } quando o backend exige 2º fator; null = tela normal
+    const [mfaChallenge, setMfaChallenge] = useState(null) // { mfaToken, setup? } quando o backend exige 2º fator; null = tela normal
     const [activeRole, setActiveRole] = useState('admin')
     const [mode, setMode] = useState('login') // 'login' | 'register'
     const [success, setSuccess] = useState('')
@@ -102,15 +102,23 @@ const Login = ({ onLoginSuccess }) => {
         onLoginSuccess(userData.papel)
     }
 
+    // A aba escolhida precisa bater com o papel da conta; senão encerra a sessão recém-criada
+    const rejectRoleMismatch = (userData) => {
+        if (userData.papel === activeRole) return false
+        logout().catch(() => {})
+        setError(
+            `Esta conta é do tipo ${roleConfig[userData.papel]?.label || userData.papel}, ` +
+            `não ${roleConfig[activeRole].label}`
+        )
+        return true
+    }
+
     // Confirmação do código de MFA
     const handleMfaVerify = async (code) => {
         const userData = await verifyMfaCode(mfaChallenge.mfaToken, code)
-        await completeLogin(userData)
         setMfaChallenge(null)
-    }
-
-    const handleMfaResend = async () => {
-        await resendMfaCode(mfaChallenge.mfaToken)
+        if (rejectRoleMismatch(userData)) return
+        await completeLogin(userData)
     }
 
     const handleMfaBack = () => {
@@ -134,14 +142,15 @@ const Login = ({ onLoginSuccess }) => {
                 return
             }
 
-            // Verifica se o papel bate com o selecionado
-            if (userData.papel !== activeRole) {
-                setError(
-                    `Esta conta é do tipo ${roleConfig[userData.papel]?.label || userData.papel}, ` +
-                    `não ${roleConfig[activeRole].label}`
-                )
+            // Primeiro acesso de admin/técnico: cadastrar o app autenticador
+            if (userData[MFA_SETUP_REQUIRED_FIELD]) {
+                const mfaToken = userData[MFA_TOKEN_FIELD]
+                const setup = await startMfaSetup(mfaToken)
+                setMfaChallenge({ mfaToken, setup })
                 return
             }
+
+            if (rejectRoleMismatch(userData)) return
 
             await completeLogin(userData)
 
@@ -385,8 +394,8 @@ const Login = ({ onLoginSuccess }) => {
                     {/* ── FORM MFA (segundo fator) ── */}
                     {mode === 'login' && !success && mfaChallenge && (
                         <MfaForm
+                            setup={mfaChallenge.setup}
                             onVerify={handleMfaVerify}
-                            onResend={handleMfaResend}
                             onBack={handleMfaBack}
                             accentColor={accentColor} />
                     )}
@@ -442,7 +451,7 @@ const Login = ({ onLoginSuccess }) => {
                                 )}
                             </button>
 
-                            {activeRole !== 'admin' && (
+                            {CADASTRO_PUBLICO && activeRole !== 'admin' && (
                                 <p className="text-xs text-center text-gray-500">
                                     Não tem conta?{' '}
                                     <button type="button" onClick={() => switchMode('register')}

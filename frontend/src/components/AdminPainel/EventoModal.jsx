@@ -94,7 +94,6 @@ const EventoModal = ({ onClose, onSaved }) => {
                 return
             }
 
-            console.log('Payload enviado:', JSON.stringify(payload, null, 2))
             await api.post('/reservations/', payload)
             await recarregarDados()
             onSaved?.()
@@ -102,7 +101,6 @@ const EventoModal = ({ onClose, onSaved }) => {
             toast.success('Evento salvo com sucesso!')
         } catch (err) {
             console.error(err)
-            console.log('Response data:', err.response?.data) 
             const msg = err.response?.data?.detail || 'Erro ao salvar evento.'
             toast.error(typeof msg === 'string' ? msg : 'Erro ao salvar evento. Verifique os dados.')
         } finally {

@@ -2,22 +2,19 @@ import { useState } from "react"
 import { AlertCircle, ShieldCheck, ArrowLeft } from 'lucide-react'
 
 /**
- * Formulário de verificação de segundo fator (MFA).
- * O contrato com o backend (endpoints/campos) fica isolado em AuthService.js,
- * facilmente ajustável quando o back end fechar o formato definitivo.
+ * Formulário de verificação de segundo fator (MFA por app autenticador — TOTP).
+ * Com `setup` (primeiro acesso), mostra o QR code para cadastrar o app antes do código.
+ * O contrato com o backend (endpoints/campos) fica isolado em AuthService.js.
  */
-const MfaForm = ({ onVerify, onResend, onBack, accentColor }) => {
+const MfaForm = ({ setup, onVerify, onBack, accentColor }) => {
     const [code, setCode] = useState('')
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
-    const [resending, setResending] = useState(false)
-    const [resendMessage, setResendMessage] = useState('')
 
     const handleCodeChange = (e) => {
         const digitsOnly = e.target.value.replace(/\D/g, '').slice(0, 6)
         setCode(digitsOnly)
         setError('')
-        setResendMessage('')
     }
 
     const handleSubmit = async (e) => {
@@ -28,42 +25,44 @@ const MfaForm = ({ onVerify, onResend, onBack, accentColor }) => {
         try {
             await onVerify(code)
         } catch (err) {
-            const detail = err.response?.data?.detail || err.response?.data?.message
-            setError(typeof detail === 'string' ? detail : 'Código inválido. Tente novamente.')
+            if (err.response?.status === 429) {
+                const seconds = Number(err.response.headers?.['retry-after'])
+                setError(`Muitas tentativas. Tente novamente em ${Number.isFinite(seconds) && seconds > 0 ? seconds : 30}s.`)
+            } else {
+                const detail = err.response?.data?.detail || err.response?.data?.message
+                setError(typeof detail === 'string' ? detail : 'Código inválido. Tente novamente.')
+            }
+            setCode('')
         } finally {
             setLoading(false)
         }
     }
 
-    const handleResend = async () => {
-        setError('')
-        setResendMessage('')
-        setResending(true)
-        try {
-            await onResend()
-            setResendMessage('Código reenviado.')
-        } catch {
-            setError('Não foi possível reenviar o código. Tente novamente.')
-        } finally {
-            setResending(false)
-        }
-    }
-
     return (
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <p className="text-sm text-gray-500 -mt-2">
-                Digite o código de 6 dígitos enviado para verificar sua identidade.
-            </p>
+            {setup ? (
+                <div className="flex flex-col items-center gap-3 -mt-2">
+                    <p className="text-sm text-gray-500">
+                        Seu perfil exige verificação em duas etapas. Escaneie o QR code com um app
+                        autenticador (Google Authenticator, Microsoft Authenticator, Aegis etc.) e
+                        digite o código gerado.
+                    </p>
+                    <img src={setup.qr_code} alt="QR code para cadastrar o app autenticador"
+                        width={180} height={180} className="rounded-lg border border-gray-200 bg-white p-2" />
+                    <p className="text-xs text-gray-500 text-center">
+                        Sem câmera? Digite a chave no app:{' '}
+                        <code className="font-mono font-bold text-gray-700 break-all select-all">{setup.secret}</code>
+                    </p>
+                </div>
+            ) : (
+                <p className="text-sm text-gray-500 -mt-2">
+                    Digite o código de 6 dígitos do seu app autenticador.
+                </p>
+            )}
 
             {error && (
                 <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 px-4 py-3 rounded-xl text-sm">
                     <AlertCircle size={16} /><span>{error}</span>
-                </div>
-            )}
-
-            {resendMessage && !error && (
-                <div className="flex items-center gap-2 text-green-700 bg-green-50 border border-green-200 px-4 py-3 rounded-xl text-sm">
-                    <ShieldCheck size={16} /><span>{resendMessage}</span>
                 </div>
             )}
 
@@ -89,18 +88,13 @@ const MfaForm = ({ onVerify, onResend, onBack, accentColor }) => {
             <button type="submit" disabled={loading || code.length !== 6}
                 className="cursor-pointer w-full py-3 rounded-xl font-bold text-white text-sm tracking-wide transition-all disabled:opacity-60"
                 style={{ background: `linear-gradient(135deg, ${accentColor}, #7c3aed)`, boxShadow: `0 8px 24px ${accentColor}50` }}>
-                {loading ? 'Verificando...' : 'Confirmar código'}
+                {loading ? 'Verificando...' : (setup ? 'Ativar e entrar' : 'Confirmar código')}
             </button>
 
-            <div className="flex items-center justify-between text-xs text-gray-500">
+            <div className="flex items-center text-xs text-gray-500">
                 <button type="button" onClick={onBack}
                     className="cursor-pointer flex items-center gap-1 hover:text-gray-700 transition-colors">
                     <ArrowLeft size={13} /> Voltar
-                </button>
-                <button type="button" onClick={handleResend} disabled={resending}
-                    className="cursor-pointer font-bold hover:underline disabled:opacity-60"
-                    style={{ color: accentColor }}>
-                    {resending ? 'Reenviando...' : 'Reenviar código'}
                 </button>
             </div>
         </form>
