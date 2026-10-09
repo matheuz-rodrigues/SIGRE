@@ -33,6 +33,10 @@ Outros ajustes encontrados na revisão do código:
 4. Requisições que alteram dados com sessão por cookie exigem `X-CSRF-Token` igual ao cookie e `Origin` permitida.
 5. Clientes de API podem usar `POST /auth/token` + `Authorization: Bearer`, exceto perfis com MFA.
 
+Requisito de implantação: front-end e API precisam ser *same-site* (mesmo domínio registrável, por exemplo
+`sigra.uepa.br` e `api.sigra.uepa.br`). Os cookies usam `SameSite=Lax` e não são enviados em chamadas entre
+sites diferentes (por exemplo, front em `*.cloudfront.net` e API em outro domínio).
+
 Recuperação do MFA (celular perdido):
 - Usuário não admin: `DELETE /users/{id}/mfa` por um administrador.
 - Administrador: `docker exec -it sigra_backend python3 scripts/reset_mfa.py <email>`.
@@ -56,6 +60,11 @@ Recuperação do MFA (celular perdido):
 Com `ENV=production`, a API recusa a subida quando `JWT_SECRET` ou `SESSION_SECRET` são padrão ou têm menos de
 32 caracteres, quando os dois são iguais, sem `MFA_ENCRYPTION_KEY`, sem Turnstile com o cadastro ligado ou com
 origens sem HTTPS.
+
+No deploy da AWS (`.github/workflows/cd.yml`), a task definition `sigra-prod-backend` é reaproveitada: as
+variáveis obrigatórias acima precisam ser incluídas nela (de preferência como `secrets` do Secrets Manager/SSM)
+**antes** do merge, senão o container não sobe. O build do front lê `VITE_TURNSTILE_SITE_KEY` dos secrets do
+repositório e `VITE_CADASTRO_PUBLICO` das variables.
 
 ## Rotação de segredos
 
