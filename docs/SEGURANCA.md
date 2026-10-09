@@ -112,9 +112,12 @@ GROUP BY ip ORDER BY 2 DESC;
 - Cabeçalhos: `curl -sI https://<HOST_DO_FRONT>/` e `curl -sI https://<HOST_DA_API>/health`.
 - CSP: com `CSP_HEADER_NAME=Content-Security-Policy-Report-Only`, navegar pelo sistema e conferir o console do navegador. Sem violações, trocar para `Content-Security-Policy`.
 
+## Decisões registradas
+
+- `tecnico_adm` (4) passa nas checagens `require_role(ROLE_ADMIN)` por nível mínimo e aprova/recusa reservas e solicitações. **Comportamento intencional**, confirmado pelo time; por isso o técnico também tem MFA obrigatório.
+
 ## Pontos para o time decidir
 
-- `require_role(ROLE_ADMIN)` compara nível mínimo, então `tecnico_adm` (4 ≥ 3) aprova/recusa reservas (`PATCH /reservations/approve|refuse/{id}`) e lista/decide solicitações (`GET /solicitations/`, `PATCH /solicitations/{id}/status`). Pode ser intencional; não foi alterado.
 - `GET /users/` lista todos os usuários para qualquer usuário autenticado.
 - `POST /solicitations/` é público (sem autenticação).
 - Refresh tokens são guardados em texto no banco; guardar apenas o hash reduziria o impacto de um vazamento do banco.
