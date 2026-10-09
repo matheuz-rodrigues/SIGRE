@@ -35,7 +35,7 @@ shell-backend: ## Acessa o terminal do backend (Dev)
 	docker exec -it sigra_backend bash
 
 shell-db: ## Acessa o terminal do banco de dados (Dev)
-	docker exec -it sigra_db psql -U user -d alocacoes
+	docker exec -it sigra_db sh -c 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
 
 help: ## Mostra esta ajuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'

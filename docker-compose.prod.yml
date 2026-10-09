@@ -31,7 +31,15 @@ services:
       - ENV=production
       - HOST=0.0.0.0
       - PORT=8000
-      - JWT_SECRET=${JWT_SECRET}
+      - JWT_SECRET=${JWT_SECRET:?defina JWT_SECRET}
+      - SESSION_SECRET=${SESSION_SECRET:?defina SESSION_SECRET}
+      - MFA_ENCRYPTION_KEY=${MFA_ENCRYPTION_KEY:?defina MFA_ENCRYPTION_KEY}
+      - CORS_ORIGINS=${CORS_ORIGINS:?defina CORS_ORIGINS com as origens https do front}
+      - ENABLE_DOCS=${ENABLE_DOCS:-false}
+      - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-127.0.0.1}
+      - PUBLIC_REGISTRATION_ENABLED=${PUBLIC_REGISTRATION_ENABLED:-true}
+      - TURNSTILE_SECRET_KEY=${TURNSTILE_SECRET_KEY:-}
+      - ADMIN_SEED_PASSWORD=${ADMIN_SEED_PASSWORD:-}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
@@ -42,11 +50,14 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_API_URL: ${VITE_API_URL:-}
+        VITE_API_URL: ${VITE_API_URL:?defina VITE_API_URL (https) para o build}
         VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:-}
         VITE_CADASTRO_PUBLICO: ${VITE_CADASTRO_PUBLICO:-true}
     container_name: sigra_frontend
     restart: unless-stopped
+    environment:
+      - API_ORIGIN=${VITE_API_URL}
+      - CSP_HEADER_NAME=${CSP_HEADER_NAME:-Content-Security-Policy-Report-Only}
     ports:
       - "${FRONTEND_PORT}:80"
     depends_on:
