@@ -1,18 +1,28 @@
-from fastapi import Depends, HTTPException, status
+from typing import Optional
+
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from app.try_database import get_db
 from app.models import Usuario
 from app.services.auth.security import decode_token
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
+# auto_error=False: o navegador usa o cookie HttpOnly; o header Bearer fica para clientes de API
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
 
 ROLE_USER = 1
 ROLE_ADMIN = 3
 ROLE_TECNICO_ADM = 4
 
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> Usuario:
+def get_current_user(request: Request, bearer: Optional[str] = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> Usuario:
+	token = bearer or request.cookies.get("access_token")
+	if not token:
+		raise HTTPException(
+			status_code=status.HTTP_401_UNAUTHORIZED,
+			detail="Not authenticated",
+			headers={"WWW-Authenticate": "Bearer"},
+		)
 	payload = decode_token(token)
 	if not payload:
 		raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")

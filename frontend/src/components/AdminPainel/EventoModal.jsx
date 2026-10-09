@@ -1,3 +1,4 @@
+import { toast } from 'sonner'
 import { useState } from 'react'
 import { X, CalendarDays, Check, Building2, Tag, AlignLeft } from 'lucide-react'
 import { useSchedule } from '../Schedule/ScheduleContext'
@@ -89,21 +90,19 @@ const EventoModal = ({ onClose, onSaved }) => {
             }
 
             if (!payload.fk_usuario) {
-                alert('Sessão inválida: faça login novamente.')
+                toast.warning('Sessão inválida: faça login novamente.')
                 return
             }
 
-            console.log('Payload enviado:', JSON.stringify(payload, null, 2))
             await api.post('/reservations/', payload)
             await recarregarDados()
             onSaved?.()
             onClose()
-            alert('Evento salvo com sucesso!')
+            toast.success('Evento salvo com sucesso!')
         } catch (err) {
             console.error(err)
-            console.log('Response data:', err.response?.data) 
             const msg = err.response?.data?.detail || 'Erro ao salvar evento.'
-            alert(typeof msg === 'string' ? msg : 'Erro ao salvar evento. Verifique os dados.')
+            toast.error(typeof msg === 'string' ? msg : 'Erro ao salvar evento. Verifique os dados.')
         } finally {
             setIsSaving(false)
         }

@@ -14,4 +14,7 @@ if [ "$ENV" = "development" ]; then
     RELOAD_FLAG="--reload"
 fi
 
-uvicorn app.main:app --host 0.0.0.0 --port 8000 $RELOAD_FLAG
+# --proxy-headers: usa X-Forwarded-For/Proto apenas dos proxies listados em FORWARDED_ALLOW_IPS
+# (IP real no rate limit e https correto no callback OAuth atrás do proxy TLS)
+uvicorn app.main:app --host 0.0.0.0 --port 8000 $RELOAD_FLAG \
+    --proxy-headers --forwarded-allow-ips "${FORWARDED_ALLOW_IPS:-127.0.0.1}"

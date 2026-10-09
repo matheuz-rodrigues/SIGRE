@@ -6,7 +6,7 @@ import Footer from './components/Footer/Footer'
 import Login from './components/Login/Login'
 import Protection from './components/Protection/Protection'
 import UserView from './components/UserView/UserView'
-import { clearSession, fetchCurrentUser, applyUserProfile } from './services/AuthService'
+import { clearSession, restoreSession, logout } from './services/AuthService'
 
 const getInitialRole  = () => localStorage.getItem('userRole') || null
 const getInitialAdmin = () =>
@@ -22,15 +22,12 @@ function App() {
   const isAuthenticated = userRole !== null
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
-    if (!token) return
-    fetchCurrentUser()
+    // Só tenta restaurar se havia sessão; a validade real está no cookie HttpOnly
+    if (!localStorage.getItem('userId')) return
+    restoreSession()
       .then((me) => {
-        applyUserProfile(me)
-        const byTipo = { 1: 'aluno', 2: 'professor', 3: 'admin', 4: 'tecnico_adm' }
-        const papel = me.papel || byTipo[me.tipo_usuario] || 'aluno'
-        setUserRole(papel)
-        if (papel === 'admin' || papel === 'tecnico_adm') setIsAdmin(true)
+        setUserRole(me.papel)
+        setIsAdmin(me.papel === 'admin' || me.papel === 'tecnico_adm')
       })
       .catch((err) => {
         if (err.response?.status === 401) {
@@ -66,9 +63,9 @@ function App() {
   }
 
   const handleLogOut = () => {
-    clearSession()
+    logout().catch(() => {})
     localStorage.removeItem('isAdminAuthenticated')
-    
+
     setUserRole(null)
     setIsAdmin(false)
     setShowLogin(true)

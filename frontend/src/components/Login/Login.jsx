@@ -1,12 +1,17 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
+import { Turnstile } from '@marsidev/react-turnstile'
 import {
     Shield, AlertCircle, User, Lock, Eye, EyeOff,
     GraduationCap, BookOpen, Mail, UserPlus, ArrowLeft, CheckCircle2, Phone, ChevronDown
 } from 'lucide-react'
 import logo from '../../assets/logouepa.png'
+import MfaForm from './MfaForm'
 
 // ── Services ──────────────────────────────────────────────────────────────────
-import { login, register, saveSession, fetchCurrentUser, applyUserProfile } from '../../services/AuthService'
+import {
+    login, register, saveSession, fetchCurrentUser, applyUserProfile, logout,
+    verifyMfaCode, startMfaSetup, MFA_REQUIRED_FIELD, MFA_SETUP_REQUIRED_FIELD, MFA_TOKEN_FIELD,
+} from '../../services/AuthService'
 import { getCourses } from '../../services/CourseService'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
@@ -19,17 +24,34 @@ const roleConfig = {
     tecnico_adm: { label: 'Técnico Adm.', icon: BookOpen, color: '#15803d' },
 }
 
+// Feature flag: quando VITE_CADASTRO_PUBLICO === 'false' o cadastro some da UI.
+// Isso só esconde a interface — o back-end deve rejeitar /auth/register por conta própria.
+const CADASTRO_PUBLICO = import.meta.env.VITE_CADASTRO_PUBLICO !== 'false'
+
+const DOMINIOS_PERMITIDOS = ['@uepa.br', '@aluno.uepa.br']
+
+// Validação apenas de UX (feedback imediato). A validação real e autoritativa do
+// domínio do e-mail é feita no back-end — o cliente pode ser facilmente contornado.
+const emailInstitucionalValido = (email) => {
+    const e = email.trim().toLowerCase()
+    return DOMINIOS_PERMITIDOS.some(d => e.endsWith(d))
+}
+
 // ── Componente ────────────────────────────────────────────────────────────────
 const Login = ({ onLoginSuccess }) => {
     const [formData, setFormData] = useState({ username: '', password: '' })
     const [showPassword, setShowPassword] = useState(false)
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
+    const [retryAfter, setRetryAfter] = useState(0) // segundos restantes de bloqueio por rate limit; 0 = sem bloqueio
+    const [mfaChallenge, setMfaChallenge] = useState(null) // { mfaToken, setup? } quando o backend exige 2º fator; null = tela normal
     const [activeRole, setActiveRole] = useState('admin')
     const [mode, setMode] = useState('login') // 'login' | 'register'
     const [success, setSuccess] = useState('')
     const [showRegisterPassword, setShowRegisterPassword] = useState(false)
     const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+    const [captchaToken, setCaptchaToken] = useState('')
+    const turnstileRef = useRef(null)
 
     const [cursosDisponiveis, setCursosDisponiveis] = useState([])
 
@@ -53,7 +75,58 @@ const Login = ({ onLoginSuccess }) => {
         }
     }, [mode])
 
+    // Contagem regressiva do bloqueio por rate limit (HTTP 429)
+    useEffect(() => {
+        if (retryAfter <= 0) return
+        const timer = setInterval(() => {
+            setRetryAfter(prev => (prev <= 1 ? 0 : prev - 1))
+        }, 1000)
+        return () => clearInterval(timer)
+    }, [retryAfter])
+
     // ── Login ──────────────────────────────────────────────────────────────────
+    // Finaliza a sessão após autenticação bem-sucedida (direta ou pós-MFA)
+    const completeLogin = async (userData) => {
+        saveSession(userData)
+        try {
+            const me = await fetchCurrentUser()
+            applyUserProfile(me)
+        } catch {
+            applyUserProfile({
+                id: userData.id,
+                nome: userData.nome,
+                email: userData.email,
+                papel: userData.papel,
+            })
+        }
+        onLoginSuccess(userData.papel)
+    }
+
+    // A aba escolhida precisa bater com o papel da conta; senão encerra a sessão recém-criada
+    const rejectRoleMismatch = (userData) => {
+        if (userData.papel === activeRole) return false
+        logout().catch(() => {})
+        setError(
+            `Esta conta é do tipo ${roleConfig[userData.papel]?.label || userData.papel}, ` +
+            `não ${roleConfig[activeRole].label}`
+        )
+        return true
+    }
+
+    // Confirmação do código de MFA
+    const handleMfaVerify = async (code) => {
+        const userData = await verifyMfaCode(mfaChallenge.mfaToken, code)
+        setMfaChallenge(null)
+        if (rejectRoleMismatch(userData)) return
+        await completeLogin(userData)
+    }
+
+    const handleMfaBack = () => {
+        setMfaChallenge(null)
+        setError('')
+        setFormData({ username: '', password: '' })
+    }
+
     const handleSubmit = async (e) => {
         e.preventDefault()
         setError('')
@@ -63,31 +136,33 @@ const Login = ({ onLoginSuccess }) => {
             // Aluno / Professor: chama o backend
             const userData = await login(formData.username, formData.password)
 
-            // Verifica se o papel bate com o selecionado
-            if (userData.papel !== activeRole) {
-                setError(
-                    `Esta conta é do tipo ${roleConfig[userData.papel]?.label || userData.papel}, ` +
-                    `não ${roleConfig[activeRole].label}`
-                )
+            // Backend sinaliza que falta o segundo fator — mostra o campo de código
+            if (userData[MFA_REQUIRED_FIELD]) {
+                setMfaChallenge({ mfaToken: userData[MFA_TOKEN_FIELD] })
                 return
             }
 
-            saveSession(userData)
-            try {
-                const me = await fetchCurrentUser()
-                applyUserProfile(me)
-            } catch {
-                applyUserProfile({
-                    id: userData.id,
-                    nome: userData.nome,
-                    email: userData.email,
-                    papel: userData.papel,
-                })
+            // Primeiro acesso de admin/técnico: cadastrar o app autenticador
+            if (userData[MFA_SETUP_REQUIRED_FIELD]) {
+                const mfaToken = userData[MFA_TOKEN_FIELD]
+                const setup = await startMfaSetup(mfaToken)
+                setMfaChallenge({ mfaToken, setup })
+                return
             }
-            onLoginSuccess(userData.papel)
+
+            if (rejectRoleMismatch(userData)) return
+
+            await completeLogin(userData)
 
         }
         catch (err) {
+            if (err.response?.status === 429) {
+                const retryAfterHeader = err.response.headers?.['retry-after']
+                const seconds = Number(retryAfterHeader)
+                setRetryAfter(Number.isFinite(seconds) && seconds > 0 ? seconds : 30)
+                return
+            }
+
             const detail = err.response?.data?.detail || err.response?.data?.message
             if (Array.isArray(detail)) {
                 setError(detail[0].msg.replace('Value error, ', ''))
@@ -123,6 +198,8 @@ const Login = ({ onLoginSuccess }) => {
         if (!nome.trim()) return 'Informe seu nome completo'
         if (!username.trim()) return 'Informe seu nome de usuário'
         if (!email.trim()) return 'Informe seu e-mail'
+        if (!emailInstitucionalValido(email))
+            return 'Use um e-mail institucional (@uepa.br ou @aluno.uepa.br)'
 
         if (activeRole === 'aluno') {
             if (!email.toLowerCase().endsWith('@aluno.uepa.br'))
@@ -155,6 +232,7 @@ const Login = ({ onLoginSuccess }) => {
         setError('')
         const validationError = validateRegister()
         if (validationError) { setError(validationError); return }
+        if (!captchaToken) { setError('Confirme que você não é um robô'); return }
 
         setLoading(true)
         try {
@@ -169,6 +247,8 @@ const Login = ({ onLoginSuccess }) => {
                 papel: activeRole,
                 cursoId: registerData.cursoId ? Number(registerData.cursoId) : undefined,
                 departamento: registerData.departamento || undefined,
+                // Token do Cloudflare Turnstile — a verificação (siteverify) é feita no back-end
+                turnstileToken: captchaToken,
             }
 
             await register(payload)
@@ -178,6 +258,7 @@ const Login = ({ onLoginSuccess }) => {
                 `Aguarde a aprovação do administrador para acessar o sistema.`
             )
         } catch (err) {
+            resetCaptcha() // token é de uso único
             const detail = err.response?.data?.detail || err.response?.data?.message
             if (Array.isArray(detail)) {
                 setError(detail[0].msg.replace('Value error, ', ''))
@@ -191,8 +272,15 @@ const Login = ({ onLoginSuccess }) => {
         }
     }
 
+    const resetCaptcha = () => {
+        setCaptchaToken('')
+        turnstileRef.current?.reset()
+    }
+
     const switchMode = (newMode) => {
-        setMode(newMode); setError(''); setSuccess('')
+        if (newMode === 'register' && !CADASTRO_PUBLICO) return
+        resetCaptcha()
+        setMode(newMode); setError(''); setSuccess(''); setMfaChallenge(null)
         setFormData({ username: '', password: '' })
         setRegisterData({
             nome: '', email: '', telefone: '', username: '',
@@ -202,7 +290,8 @@ const Login = ({ onLoginSuccess }) => {
     }
 
     const switchRole = (role) => {
-        setActiveRole(role); setError(''); setSuccess('')
+        resetCaptcha()
+        setActiveRole(role); setError(''); setSuccess(''); setMfaChallenge(null)
         setFormData({ username: '', password: '' })
         setRegisterData({
             nome: '', email: '', telefone: '', username: '',
@@ -275,9 +364,14 @@ const Login = ({ onLoginSuccess }) => {
                     </div>
 
                     {/* Alerta de erro */}
-                    {error && (
+                    {(error || retryAfter > 0) && (
                         <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 px-4 py-3 rounded-xl mb-4 text-sm">
-                            <AlertCircle size={16} /><span>{error}</span>
+                            <AlertCircle size={16} />
+                            <span>
+                                {retryAfter > 0
+                                    ? `Muitas tentativas. Tente novamente em ${retryAfter}s.`
+                                    : error}
+                            </span>
                         </div>
                     )}
 
@@ -297,8 +391,17 @@ const Login = ({ onLoginSuccess }) => {
                         </div>
                     )}
 
+                    {/* ── FORM MFA (segundo fator) ── */}
+                    {mode === 'login' && !success && mfaChallenge && (
+                        <MfaForm
+                            setup={mfaChallenge.setup}
+                            onVerify={handleMfaVerify}
+                            onBack={handleMfaBack}
+                            accentColor={accentColor} />
+                    )}
+
                     {/* ── FORM LOGIN ── */}
-                    {mode === 'login' && !success && (
+                    {mode === 'login' && !success && !mfaChallenge && (
                         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                             <div className="relative">
                                 <User size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -325,10 +428,14 @@ const Login = ({ onLoginSuccess }) => {
                                 </button>
                             </div>
 
-                            <button type="submit" disabled={loading}
+                            <button type="submit" disabled={loading || retryAfter > 0}
                                 className="cursor-pointer w-full py-3 rounded-xl font-bold text-white text-sm tracking-wide transition-all disabled:opacity-60"
                                 style={{ background: `linear-gradient(135deg, ${accentColor}, #7c3aed)`, boxShadow: `0 8px 24px ${accentColor}50` }}>
-                                {loading ? (
+                                {retryAfter > 0 ? (
+                                    <span className="flex items-center justify-center gap-2">
+                                        Aguarde {retryAfter}s
+                                    </span>
+                                ) : loading ? (
                                     <span className="flex items-center justify-center gap-2">
                                         <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
                                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
@@ -344,7 +451,7 @@ const Login = ({ onLoginSuccess }) => {
                                 )}
                             </button>
 
-                            {activeRole !== 'admin' && (
+                            {CADASTRO_PUBLICO && activeRole !== 'admin' && (
                                 <p className="text-xs text-center text-gray-500">
                                     Não tem conta?{' '}
                                     <button type="button" onClick={() => switchMode('register')}
@@ -489,6 +596,15 @@ const Login = ({ onLoginSuccess }) => {
                                     {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                                 </button>
                             </div>
+
+                            {/* CAPTCHA (Cloudflare Turnstile) */}
+                            <Turnstile
+                                ref={turnstileRef}
+                                siteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY}
+                                onSuccess={setCaptchaToken}
+                                onExpire={() => setCaptchaToken('')}
+                                onError={() => setCaptchaToken('')}
+                            />
 
                             <button type="submit" disabled={loading}
                                 className="cursor-pointer w-full py-3 rounded-xl font-bold text-white text-sm tracking-wide transition-all mt-1 disabled:opacity-60"

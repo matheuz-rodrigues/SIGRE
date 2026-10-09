@@ -1,5 +1,10 @@
 import pytest
 import os
+
+# Os testes existentes autenticam admins direto pelo token; MFA e limites têm testes próprios
+os.environ.setdefault("MFA_REQUIRED_ROLES", "[]")
+os.environ.setdefault("REGISTER_MAX_PER_IP_PER_HOUR", "1000")
+os.environ.setdefault("LOGIN_MAX_FAILURES_PER_IP", "1000")
 from unittest.mock import patch, MagicMock
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy import create_engine

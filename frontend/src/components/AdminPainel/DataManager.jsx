@@ -136,11 +136,6 @@ const DataManager = ({ onReturnToHorarios }) => {
                     onAddSubItem={handleAddSubItem}
                 />
             )}
-
-            <style>{`
-                @keyframes fadeInDown{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
-                @keyframes fadeInUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-            `}</style>
         </div>
     )
 }

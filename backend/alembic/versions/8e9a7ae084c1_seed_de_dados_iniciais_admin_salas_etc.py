@@ -8,9 +8,6 @@ Create Date: 2025-11-17 21:35:14.835643
 from typing import Sequence, Union
 
 from alembic import op
-import os
-
-from app.services.auth.security import hash_password
 
 revision: str = "8e9a7ae084c1"
 down_revision: Union[str, Sequence[str], None] = None
@@ -19,21 +16,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    if os.getenv("ENV") != "development":
-        print("Pulando seeding em ambiente não-dev.")
-        return
-
-    admin_hash = hash_password("admin456")
-    op.execute(
-        f"""
-        INSERT INTO usuarios (nome, email, senha, tipo_usuario)
-        VALUES ('Administrador', 'admin@uepa.br', '{admin_hash}', 3)
-        ON CONFLICT (email) DO UPDATE SET
-            nome = EXCLUDED.nome,
-            senha = EXCLUDED.senha,
-            tipo_usuario = EXCLUDED.tipo_usuario;
-        """
-    )
+    # Não cria mais administrador com senha fixa. O admin inicial é criado no startup
+    # (app/main.py:_seed_admin) a partir de ADMIN_SEED_PASSWORD, definida por ambiente.
+    pass
 
 
 def downgrade() -> None:

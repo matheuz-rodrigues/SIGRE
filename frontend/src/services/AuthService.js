@@ -1,6 +1,15 @@
-import api from './api'
+import api, { setCsrfToken, refreshSession } from './api'
 
-const ROLE_BY_TIPO = { 1: 'aluno', 2: 'professor', 3: 'admin' }
+const ROLE_BY_TIPO = { 1: 'aluno', 2: 'professor', 3: 'admin', 4: 'tecnico_adm' }
+
+// ── MFA (TOTP, app autenticador) ─────────────────────────────────────────────
+// /auth/login devolve { mfa_required, mfa_token } ou, no primeiro acesso de
+// admin/técnico, { mfa_setup_required, mfa_token }.
+export const MFA_VERIFY_ENDPOINT = '/auth/mfa/verify'
+export const MFA_SETUP_ENDPOINT = '/auth/mfa/setup'
+export const MFA_REQUIRED_FIELD = 'mfa_required'
+export const MFA_SETUP_REQUIRED_FIELD = 'mfa_setup_required'
+export const MFA_TOKEN_FIELD = 'mfa_token'
 
 /**
  * Perfil do usuário autenticado — GET /users/me
@@ -39,12 +48,53 @@ export const applyUserProfile = (me) => {
 
 /**
  * Login — POST /auth/login
- * Envia: { username, senha }
- * Recebe: { id, nome, email, username, papel, access_token, token_type }
+ * Envia: { username, password }
+ * Recebe: { id, nome, email, username, papel, csrf_token, token_type } (tokens em cookies HttpOnly)
+ *         ou o desafio de MFA
  */
 export const login = async (username, senha) => {
   const res = await api.post('/auth/login', { username, password: senha })
   return res.data
+}
+
+/**
+ * Verificação do código de MFA — POST {MFA_VERIFY_ENDPOINT}
+ * Envia: { mfa_token, code }
+ * Recebe: mesmo formato de sucesso de login
+ */
+export const verifyMfaCode = async (mfaToken, code) => {
+  const res = await api.post(MFA_VERIFY_ENDPOINT, { [MFA_TOKEN_FIELD]: mfaToken, code })
+  return res.data
+}
+
+/**
+ * Cadastro do MFA no primeiro acesso — POST {MFA_SETUP_ENDPOINT}
+ * Envia: { mfa_token }
+ * Recebe: { otpauth_uri, qr_code (data:image/svg+xml), secret }
+ */
+export const startMfaSetup = async (mfaToken) => {
+  const res = await api.post(MFA_SETUP_ENDPOINT, { [MFA_TOKEN_FIELD]: mfaToken })
+  return res.data
+}
+
+/**
+ * Restaura a sessão a partir do cookie de refresh (recarga da página)
+ */
+export const restoreSession = async () => {
+  const me = await refreshSession()
+  applyUserProfile(me)
+  return me
+}
+
+/**
+ * Logout — revoga o refresh token no servidor e limpa os cookies
+ */
+export const logout = async () => {
+  try {
+    await api.post('/auth/logout')
+  } finally {
+    clearSession()
+  }
 }
 
 /**
@@ -62,7 +112,8 @@ export const register = async (dados) => {
  * Salva os dados do usuário no localStorage após login bem-sucedido
  */
 export const saveSession = (userData) => {
-  localStorage.setItem('access_token', userData.access_token)
+  // Tokens ficam só em cookies HttpOnly; aqui guardamos apenas dados de exibição
+  setCsrfToken(userData.csrf_token)
   localStorage.setItem('userRole', userData.papel)
   localStorage.setItem('userName', userData.nome)
   localStorage.setItem('userEmail', userData.email)
@@ -77,7 +128,8 @@ export const saveSession = (userData) => {
  * Remove todos os dados de sessão (logout)
  */
 export const clearSession = () => {
-  localStorage.removeItem('access_token')
+  setCsrfToken(null)
+  localStorage.removeItem('access_token') // legado: versões anteriores guardavam o token aqui
   localStorage.removeItem('userRole')
   localStorage.removeItem('userName')
   localStorage.removeItem('userEmail')
