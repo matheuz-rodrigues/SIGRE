@@ -307,9 +307,137 @@ def test_production_rejects_default_secrets():
 def test_production_accepts_hardened_config():
     Settings(
         ENV="production",
+        DATABASE_URL="postgresql://sigra:" + "c" * 48 + "@db:5432/alocacoes",
+        PROFESSOR_DEFAULT_PASSWORD="",
         JWT_SECRET="a" * 64,
         SESSION_SECRET="b" * 64,
         MFA_ENCRYPTION_KEY=Fernet.generate_key().decode(),
         TURNSTILE_SECRET_KEY="segredo",
         CORS_ORIGINS=["https://sigra.uepa.br"],
     ).validate_for_production()
+
+
+def _hardened(**overrides):
+    values = dict(
+        ENV="production",
+        DATABASE_URL="postgresql://sigra:" + "c" * 48 + "@db:5432/alocacoes",
+        PROFESSOR_DEFAULT_PASSWORD="",
+        JWT_SECRET="a" * 64,
+        SESSION_SECRET="b" * 64,
+        MFA_ENCRYPTION_KEY=Fernet.generate_key().decode(),
+        TURNSTILE_SECRET_KEY="segredo",
+        CORS_ORIGINS=["https://sigra.uepa.br"],
+    )
+    values.update(overrides)
+    return Settings(**values)
+
+
+@pytest.mark.parametrize("db_url", [
+    "postgresql://user:password@db:5432/alocacoes",
+    "postgresql://sigra:<GERAR_SENHA_DO_BANCO>@db:5432/alocacoes",
+    "postgresql://sigra:curta@db:5432/alocacoes",
+])
+def test_production_rejects_weak_database_password(db_url):
+    with pytest.raises(RuntimeError, match="DATABASE_URL"):
+        _hardened(DATABASE_URL=db_url).validate_for_production()
+
+
+def test_production_rejects_weak_professor_default_password():
+    with pytest.raises(RuntimeError, match="PROFESSOR_DEFAULT_PASSWORD"):
+        _hardened(PROFESSOR_DEFAULT_PASSWORD="professor123").validate_for_production()
+
+
+# ---------- Sessões: refresh token, status e troca de senha ----------
+
+def test_refresh_token_is_stored_hashed(client, db_session):
+    from app.models.refresh_token import RefreshToken
+    user = _make_user(db_session, "hashrt@aluno.uepa.br", "hashrt")
+    _login(client, "hashrt")
+    plain = client.cookies.get("refresh_token")
+    stored = [r.token for r in db_session.query(RefreshToken).filter(RefreshToken.user_id == user.id)]
+    assert plain and plain not in stored
+
+
+def test_reused_refresh_token_revokes_all_sessions(client, db_session):
+    from app.models.refresh_token import RefreshToken
+    user = _make_user(db_session, "reuse@aluno.uepa.br", "reuseuser")
+    _login(client, "reuseuser")
+    stolen = client.cookies.get("refresh_token")
+    assert client.post("/auth/refresh").status_code == 200
+    current = client.cookies.get("refresh_token")
+
+    # Fora da janela de tolerância entre abas
+    old = datetime.now(tz=timezone.utc) - timedelta(minutes=5)
+    db_session.query(RefreshToken).filter(
+        RefreshToken.user_id == user.id, RefreshToken.revoked_at.isnot(None)
+    ).update({RefreshToken.revoked_at: old})
+    db_session.commit()
+
+    client.cookies.clear()
+    client.cookies.set("refresh_token", stolen, path="/auth")
+    assert client.post("/auth/refresh").status_code == 401
+
+    client.cookies.clear()
+    client.cookies.set("refresh_token", current, path="/auth")
+    assert client.post("/auth/refresh").status_code == 401
+
+
+def test_concurrent_refresh_within_grace_does_not_revoke_all(client, db_session):
+    _make_user(db_session, "grace@aluno.uepa.br", "graceuser")
+    _login(client, "graceuser")
+    first = client.cookies.get("refresh_token")
+    assert client.post("/auth/refresh").status_code == 200
+    current = client.cookies.get("refresh_token")
+
+    client.cookies.clear()
+    client.cookies.set("refresh_token", first, path="/auth")
+    assert client.post("/auth/refresh").status_code == 401
+
+    client.cookies.clear()
+    client.cookies.set("refresh_token", current, path="/auth")
+    assert client.post("/auth/refresh").status_code == 200
+
+
+def test_refused_user_loses_access_immediately(client, db_session):
+    user = _make_user(db_session, "cut@aluno.uepa.br", "cutuser")
+    headers = {"Authorization": f"Bearer {create_access_token(user.email, user.id, 1)}"}
+    assert client.get("/users/me", headers=headers).status_code == 200
+    user.status = "recusado"
+    db_session.commit()
+    assert client.get("/users/me", headers=headers).status_code == 401
+
+
+def test_password_change_revokes_other_sessions(client, db_session):
+    from app.services.auth.security import create_refresh_token, validate_refresh_token
+    user = _make_user(db_session, "pwchange@aluno.uepa.br", "pwchange")
+    other_device = create_refresh_token(db_session, user.id)
+    csrf = _login(client, "pwchange").json()["csrf_token"]
+
+    resp = client.patch(
+        f"/users/{user.id}",
+        json={"senha_atual": PASSWORD, "senha": "Outro#Segredo2027y"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert resp.status_code == 200
+    assert validate_refresh_token(db_session, other_device) is None
+    # A sessão atual recebe um refresh token novo e continua funcionando
+    assert client.post("/auth/refresh").status_code == 200
+
+
+# ---------- Autorização ----------
+
+def test_regular_user_cannot_list_users(client, db_session):
+    user = _make_user(db_session, "lister@aluno.uepa.br", "lister")
+    headers = {"Authorization": f"Bearer {create_access_token(user.email, user.id, 1)}"}
+    assert client.get("/users/", headers=headers).status_code == 403
+
+
+@pytest.mark.parametrize("field,value", [
+    ("email", "outro@gmail.com"),
+    ("username", "novo_nome"),
+])
+def test_user_cannot_change_own_email_or_username(client, db_session, field, value):
+    user = _make_user(db_session, "selfedit@aluno.uepa.br", "selfedit")
+    headers = {"Authorization": f"Bearer {create_access_token(user.email, user.id, 1)}"}
+    resp = client.patch(f"/users/{user.id}", json={field: value}, headers=headers)
+    assert resp.status_code == 403

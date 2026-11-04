@@ -4,6 +4,7 @@ from functools import lru_cache
 
 # Valores que nunca podem chegar a produção (exemplos e defaults antigos).
 _INSECURE_SECRETS = {"", "change_me_super_secret", "changeme", "secret"}
+_INSECURE_DB_PASSWORDS = {"", "password", "postgres", "user", "admin", "changeme"}
 
 
 class Settings(BaseSettings):
@@ -111,8 +112,28 @@ class Settings(BaseSettings):
 			errors.append("Origens do front-end devem usar HTTPS em produção")
 		if self.GOOGLE_CLIENT_ID and not self.GOOGLE_REDIRECT_URI.startswith("https://"):
 			errors.append("GOOGLE_REDIRECT_URI deve usar HTTPS em produção")
+		errors.extend(self._database_errors())
+		if self.PROFESSOR_DEFAULT_PASSWORD.strip():
+			from app.schemas.user import validar_senha_forte
+			try:
+				validar_senha_forte(self.PROFESSOR_DEFAULT_PASSWORD.strip())
+			except ValueError:
+				errors.append("PROFESSOR_DEFAULT_PASSWORD deve ser uma senha forte (ou ficar vazia)")
 		if errors:
 			raise RuntimeError("Configuração insegura para produção: " + "; ".join(errors))
+
+	def _database_errors(self) -> list[str]:
+		from sqlalchemy.engine import make_url
+		try:
+			url = make_url(self.DATABASE_URL)
+		except Exception:
+			return ["DATABASE_URL inválida"]
+		if url.get_backend_name() == "sqlite":
+			return []
+		password = url.password or ""
+		if password.lower() in _INSECURE_DB_PASSWORDS or password.startswith("<") or len(password) < 16:
+			return ["A senha do banco em DATABASE_URL deve ser aleatória com pelo menos 16 caracteres"]
+		return []
 
 
 @lru_cache

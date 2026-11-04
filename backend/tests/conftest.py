@@ -91,6 +91,33 @@ def admin_token_headers(test_admin_user):
     )
     return {"Authorization": f"Bearer {access_token}"}
 
+@pytest.fixture
+def test_regular_user(db_session):
+    from app.models.user import Usuario
+    user = db_session.query(Usuario).filter(Usuario.email == "aluno@test.com").first()
+    if not user:
+        user = Usuario(
+            email="aluno@test.com",
+            username="aluno_test",
+            senha="hashed_password",
+            tipo_usuario=1, # aluno
+            status="aprovado",
+            nome="Aluno Test"
+        )
+        db_session.add(user)
+        db_session.commit()
+        db_session.refresh(user)
+    return user
+
+@pytest.fixture
+def user_token_headers(test_regular_user):
+    access_token = create_access_token(
+        subject=test_regular_user.email,
+        user_id=test_regular_user.id,
+        role=test_regular_user.tipo_usuario
+    )
+    return {"Authorization": f"Bearer {access_token}"}
+
 @pytest.fixture(autouse=True)
 def rollback_after_test(db_session):
     yield

@@ -32,6 +32,9 @@ def get_current_user(request: Request, bearer: Optional[str] = Depends(oauth2_sc
 	user = db.query(Usuario).filter(Usuario.id == user_id, Usuario.deleted_at.is_(None)).first()
 	if not user:
 		raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+	# Conta recusada ou voltada a pendente perde o acesso na hora, sem esperar o token expirar
+	if user.tipo_usuario != ROLE_ADMIN and user.status != "aprovado":
+		raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not enabled")
 	return user
 
 

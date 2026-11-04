@@ -1,5 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+import hashlib
+import logging
+import secrets
 import uuid
 
 import jwt
@@ -11,6 +14,11 @@ from app.models.refresh_token import RefreshToken
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 settings = get_settings()
+audit_logger = logging.getLogger("sigra.audit")
+
+# Reapresentar um refresh token revogado há menos que isso é tratado como corrida entre abas,
+# não como roubo
+REFRESH_REUSE_GRACE_SECONDS = 30
 
 TOKEN_TYPE_ACCESS = "access"
 TOKEN_TYPE_MFA = "mfa"
@@ -75,14 +83,23 @@ def decode_token(token: str, expected_type: str = TOKEN_TYPE_ACCESS) -> Optional
 	return payload
 
 
+def _hash_refresh_token(token: str) -> str:
+	"""O banco guarda só o SHA-256: um vazamento do banco não permite reutilizar as sessões."""
+	return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _find_refresh_token(db: Session, token: str) -> Optional[RefreshToken]:
+	return db.query(RefreshToken).filter(RefreshToken.token == _hash_refresh_token(token)).first()
+
+
 def create_refresh_token(db: Session, user_id: int, expires_days: Optional[int] = None) -> str:
-	"""Gera um refresh token UUID, armazena no banco de dados com data de expiração e retorna a string do token."""
-	token_str = str(uuid.uuid4())
+	"""Gera um refresh token aleatório, armazena o hash no banco e retorna o token em texto."""
+	token_str = secrets.token_urlsafe(32)
 	days = expires_days or settings.JWT_REFRESH_EXPIRES_DAYS
 	expires_at = datetime.now(tz=timezone.utc) + timedelta(days=days)
 
 	refresh_token = RefreshToken(
-		token=token_str,
+		token=_hash_refresh_token(token_str),
 		user_id=user_id,
 		expires_at=expires_at,
 	)
@@ -91,14 +108,36 @@ def create_refresh_token(db: Session, user_id: int, expires_days: Optional[int] 
 	return token_str
 
 
+def revoke_all_refresh_tokens(db: Session, user_id: int) -> int:
+	"""Encerra todas as sessões do usuário (troca de senha, bloqueio, reutilização de token)."""
+	count = db.query(RefreshToken).filter(
+		RefreshToken.user_id == user_id,
+		RefreshToken.revoked_at.is_(None),
+	).update({RefreshToken.revoked_at: datetime.now(tz=timezone.utc)}, synchronize_session=False)
+	db.commit()
+	return count
+
+
 def validate_refresh_token(db: Session, token: str) -> Optional[int]:
-	"""Busca o token, verifica se não está revogado nem expirado. Retorna user_id ou None."""
-	record = db.query(RefreshToken).filter(RefreshToken.token == token).first()
+	"""Busca o token, verifica se não está revogado nem expirado. Retorna user_id ou None.
+
+	Um token já revogado sendo reapresentado indica roubo (o legítimo já foi rotacionado):
+	todas as sessões do usuário são encerradas.
+	"""
+	record = _find_refresh_token(db, token)
 	if not record:
 		return None
-	if record.revoked_at is not None:
-		return None
 	now = datetime.now(tz=timezone.utc)
+	if record.revoked_at is not None:
+		revoked_at = record.revoked_at if record.revoked_at.tzinfo else record.revoked_at.replace(tzinfo=timezone.utc)
+		if (now - revoked_at).total_seconds() < REFRESH_REUSE_GRACE_SECONDS:
+			return None
+		revoke_all_refresh_tokens(db, record.user_id)
+		audit_logger.warning(
+			"auth.refresh.reuse",
+			extra={"event": "auth.refresh.reuse", "user_id": record.user_id},
+		)
+		return None
 	expires = record.expires_at
 	if expires.tzinfo is None:
 		expires = expires.replace(tzinfo=timezone.utc)
@@ -109,7 +148,7 @@ def validate_refresh_token(db: Session, token: str) -> Optional[int]:
 
 def revoke_refresh_token(db: Session, token: str) -> bool:
 	"""Define revoked_at no registro do token. Retorna True se encontrado e revogado."""
-	record = db.query(RefreshToken).filter(RefreshToken.token == token).first()
+	record = _find_refresh_token(db, token)
 	if not record:
 		return False
 	record.revoked_at = datetime.now(tz=timezone.utc)

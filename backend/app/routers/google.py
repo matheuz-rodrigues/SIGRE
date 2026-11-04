@@ -68,8 +68,9 @@ def google_callback(
     """
     state_from_google = request.query_params.get("state")
     
-    state_from_session = request.session.get("oauth_state")
-    user_id_from_session = request.session.get("oauth_user_id")
+    # Uso único: o mesmo state não pode ser reaproveitado em outro callback
+    state_from_session = request.session.pop("oauth_state", None)
+    user_id_from_session = request.session.pop("oauth_user_id", None)
 
     if not state_from_session or not user_id_from_session:
         raise HTTPException(status_code=400, detail="Sessão inválida ou ID de usuário faltando")
@@ -111,8 +112,10 @@ def google_callback(
         row.refresh_token = creds.refresh_token
     row.expiry = creds.expiry
 
-    row.client_id = settings.GOOGLE_CLIENT_ID
-    row.client_secret = settings.GOOGLE_CLIENT_SECRET
+    # Client ID/secret vêm sempre do ambiente: o secret não é copiado para o banco
+    # e a rotação dele no Google Cloud não exige atualizar registros
+    row.client_id = None
+    row.client_secret = None
     row.scopes = " ".join(SCOPES)
     row.updated_at = datetime.now(tz=timezone.utc)
     

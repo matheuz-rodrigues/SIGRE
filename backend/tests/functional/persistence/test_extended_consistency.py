@@ -5,7 +5,7 @@ from app.models.user import Usuario
 from app.models.allocation import Alocacao
 from datetime import date, time, datetime, timedelta
 
-def test_solicitation_course_persistence(client, db_session):
+def test_solicitation_course_persistence(client, db_session, user_token_headers):
     # 1. Setup metadata
     course = db_session.query(Curso).first()
     if not course:
@@ -36,14 +36,14 @@ def test_solicitation_course_persistence(client, db_session):
         "salaId": room.id,
         "cursoId": course.id
     }
-    response = client.post("/solicitations/", json=payload)
+    response = client.post("/solicitations/", json=payload, headers=user_token_headers)
     assert response.status_code == 201
     data = response.json()
     assert data["cursoId"] == course.id
     assert data["curso"] == course.nome
 
     # 3. Check Database
-    db_sol = db_session.query(Solicitacao).filter(Solicitacao.email == "applicant@test.com").first()
+    db_sol = db_session.query(Solicitacao).filter(Solicitacao.email == "aluno@test.com").first()
     assert db_sol is not None
     assert db_sol.fk_curso == course.id
 
