@@ -1,9 +1,10 @@
 import { User, LogOut, Shield } from 'lucide-react'
 import AdminPainel from '../AdminPainel/AdminPainel'
 import logo from '../../assets/logouepa.png'
+import { useSessionUser } from '../../services/sessionStore'
 
 const Protection = ({ onLogOut }) => {
-    const adminUser = localStorage.getItem('adminUser') || 'Admin'
+    const adminUser = useSessionUser()?.nome || 'Admin'
 
     return (
         <div className="min-h-screen bg-gray-50">

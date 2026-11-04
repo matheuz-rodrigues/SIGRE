@@ -1,4 +1,5 @@
 import api, { setCsrfToken, refreshSession } from './api'
+import { setUser } from './sessionStore'
 
 const ROLE_BY_TIPO = { 1: 'aluno', 2: 'professor', 3: 'admin', 4: 'tecnico_adm' }
 
@@ -29,21 +30,11 @@ export const updateUserById = async (userId, payload) => {
 }
 
 /**
- * Sincroniza localStorage com o retorno de /users/me (fonte de verdade pós-login).
+ * Atualiza o perfil em memória com o retorno de /users/me (fonte de verdade pós-login).
  */
 export const applyUserProfile = (me) => {
   if (!me) return
-  localStorage.setItem('userName', me.nome ?? '')
-  localStorage.setItem('userEmail', me.email ?? '')
-  localStorage.setItem('userId', String(me.id ?? ''))
-  const papel = me.papel ?? ROLE_BY_TIPO[me.tipo_usuario] ?? 'aluno'
-  localStorage.setItem('userRole', papel)
-  if (papel === 'admin') {
-    localStorage.setItem('isAdminAuthenticated', 'true')
-  }
-  localStorage.setItem('adminUser', me.nome ?? 'Admin')
-
-
+  setUser({ ...me, papel: me.papel ?? ROLE_BY_TIPO[me.tipo_usuario] ?? 'aluno' })
 }
 
 /**
@@ -109,19 +100,12 @@ export const register = async (dados) => {
 }
 
 /**
- * Salva os dados do usuário no localStorage após login bem-sucedido
+ * Guarda a sessão em memória após login bem-sucedido
+ * (tokens ficam só em cookies HttpOnly; o perfil e o token CSRF, só em memória)
  */
 export const saveSession = (userData) => {
-  // Tokens ficam só em cookies HttpOnly; aqui guardamos apenas dados de exibição
   setCsrfToken(userData.csrf_token)
-  localStorage.setItem('userRole', userData.papel)
-  localStorage.setItem('userName', userData.nome)
-  localStorage.setItem('userEmail', userData.email)
-  localStorage.setItem('userId', userData.id)
-
-  if (userData.papel === 'admin') {
-    localStorage.setItem('isAdminAuthenticated', 'true')
-  }
+  setUser(userData)
 }
 
 /**
@@ -129,11 +113,18 @@ export const saveSession = (userData) => {
  */
 export const clearSession = () => {
   setCsrfToken(null)
-  localStorage.removeItem('access_token') // legado: versões anteriores guardavam o token aqui
-  localStorage.removeItem('userRole')
-  localStorage.removeItem('userName')
-  localStorage.removeItem('userEmail')
-  localStorage.removeItem('userId')
-  localStorage.removeItem('isAdminAuthenticated')
-  localStorage.removeItem('adminUser')
+  setUser(null)
+}
+
+// Chaves gravadas por versões anteriores do front; apagadas para não sobrar dado de sessão no navegador
+const LEGACY_STORAGE_KEYS = [
+  'access_token', 'userRole', 'userName', 'userEmail', 'userId', 'isAdminAuthenticated', 'adminUser',
+]
+
+export const purgeLegacyStorage = () => {
+  try {
+    LEGACY_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key))
+  } catch {
+    // localStorage indisponível (modo privado/bloqueado): nada a limpar
+  }
 }

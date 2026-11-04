@@ -1,6 +1,7 @@
 import { toast } from 'sonner'
 import { createContext, useContext, useState, useEffect } from 'react';
 import api from '../../services/api';
+import { getUser } from '../../services/sessionStore';
 
 export const ScheduleContext = createContext();
 
@@ -44,7 +45,7 @@ function firstOccurrence(dataInicio, diaSemana) {
 
 /** Monta corpo de criação/atualização de reserva alinhado ao backend (Pydantic). */
 function buildReservationApiPayload(disciplinas, professores, d) {
-    const uid = Number(localStorage.getItem('userId'));
+    const uid = Number(getUser()?.id);
     const ds = datePart(d.dataInicio);
     const de = datePart(d.dataFim);
     
@@ -111,7 +112,7 @@ export const ScheduleProvider = ({ children }) => {
     const [periodoAtivo, setPeriodoAtivo] = useState(null);
 
     const recarregarDados = async () => {
-        if (!localStorage.getItem('userId')) return;
+        if (!getUser()) return;
 
         setLoading(true);
         try {

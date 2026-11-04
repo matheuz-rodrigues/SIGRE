@@ -39,6 +39,11 @@ Segunda rodada (branch `fix/ajustes-seguranca-dspd`):
 - Usuário comum não altera o próprio e-mail ou username (burlava o domínio institucional do cadastro).
 - Produção recusa a subida com senha de banco padrão/curta em `DATABASE_URL` e com `PROFESSOR_DEFAULT_PASSWORD` fraca.
 - OAuth Google: `state` de uso único; client ID/secret lidos sempre do ambiente e não mais copiados para `google_credentials`.
+- Front sem dados no `localStorage`: perfil e token CSRF ficam só em memória (`services/sessionStore.js`) e a sessão
+  é restaurada pelo cookie HttpOnly ao recarregar a página. Chaves antigas (`userId`, `userRole`, `adminUser`...) são apagadas.
+- Login único: a tela não tem mais abas de perfil (Administrador/Aluno/Professor/Técnico) nem textos que indiquem
+  a existência de um painel administrativo; o papel vem do back-end após a autenticação. O cadastro continua com a
+  escolha do tipo de conta.
 
 ## Fluxo de autenticação
 

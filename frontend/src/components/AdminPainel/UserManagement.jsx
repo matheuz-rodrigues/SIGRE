@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Users, GraduationCap, BookOpen, XCircle, UserPlus, Loader2, Check, X, Pencil } from 'lucide-react';
 import api from '../../services/api';
 import { getCourses } from '../../services/CourseService';
+import { getUser } from '../../services/sessionStore';
 
 const TERMOS_PROIBIDOS = ['senha', 'password', '12345', 'qwerty', 'admin', 'teste', 'sigra', 'uepa', 'aluno', 'prof']
 
@@ -76,7 +77,7 @@ const PAPEL_STYLES = {
 };
 
 const UsuarioCard = ({ u, onAprovar, onRecusar, onDeletar, onVisualizar, showAprovar, showDesativar, showReativar }) => {
-  const currentUserId = Number(localStorage.getItem('userId'));
+  const currentUserId = getUser()?.id;
   const isCurrentUser = u.id === currentUserId;
   const isAdmin = u.papel === 'admin';
   const PapelIcon = u.papel === 'professor' ? BookOpen

@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { X, CalendarDays, Check, Building2, Tag, AlignLeft } from 'lucide-react'
 import { useSchedule } from '../Schedule/ScheduleContext'
 import api from '../../services/api'
+import { getUser } from '../../services/sessionStore'
 
 const inp = "w-full px-4 py-3 border border-gray-200 rounded-xl bg-white text-gray-800 focus:ring-2 focus:ring-purple-400 focus:outline-none focus:border-purple-400 transition-all text-sm placeholder-gray-400"
 const lbl = "block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2"
@@ -65,13 +66,13 @@ const EventoModal = ({ onClose, onSaved }) => {
         if (!validate()) return
         setIsSaving(true)
         try {
-            const userId = localStorage.getItem('userId')
+            const userId = getUser()?.id
             const sala = salas.find(s => String(s.id) === String(form.salaId))
             const dataHoraInicio = new Date(`${form.data}T${form.horarioInicio}:00`).toISOString()
             const dataHoraFim = new Date(`${form.data}T${form.horarioFim}:00`).toISOString()
 
             const payload = {
-                fk_usuario: userId ? parseInt(userId) : null,
+                fk_usuario: userId ?? null,
                 salaId: parseInt(form.salaId),
                 tipo: form.tipo,
                 uso: form.nome,

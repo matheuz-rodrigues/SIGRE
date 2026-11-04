@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react"
 import { Turnstile } from '@marsidev/react-turnstile'
 import {
-    Shield, AlertCircle, User, Lock, Eye, EyeOff,
+    AlertCircle, User, Lock, Eye, EyeOff, LogIn,
     GraduationCap, BookOpen, Mail, UserPlus, ArrowLeft, CheckCircle2, Phone, ChevronDown
 } from 'lucide-react'
 import logo from '../../assets/logouepa.png'
@@ -9,16 +9,17 @@ import MfaForm from './MfaForm'
 
 // ── Services ──────────────────────────────────────────────────────────────────
 import {
-    login, register, saveSession, fetchCurrentUser, applyUserProfile, logout,
+    login, register, saveSession, fetchCurrentUser, applyUserProfile,
     verifyMfaCode, startMfaSetup, MFA_REQUIRED_FIELD, MFA_SETUP_REQUIRED_FIELD, MFA_TOKEN_FIELD,
 } from '../../services/AuthService'
 import { getCourses } from '../../services/CourseService'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
-// Admin usa credenciais sincronizadas com o backend
+// Login único: o papel vem do back-end após a autenticação, sem escolha de perfil na tela.
+// O seletor abaixo existe só no cadastro (a pessoa escolhe o tipo de conta que está criando).
+const LOGIN_COLOR = '#1c1aa3'
 
 const roleConfig = {
-    admin: { label: 'Administrador', icon: Shield, color: '#1c1aa3' },
     aluno: { label: 'Aluno', icon: GraduationCap, color: '#7c3aed' },
     professor: { label: 'Professor', icon: BookOpen, color: '#1d4ed8' },
     tecnico_adm: { label: 'Técnico Adm.', icon: BookOpen, color: '#15803d' },
@@ -45,7 +46,7 @@ const Login = ({ onLoginSuccess }) => {
     const [loading, setLoading] = useState(false)
     const [retryAfter, setRetryAfter] = useState(0) // segundos restantes de bloqueio por rate limit; 0 = sem bloqueio
     const [mfaChallenge, setMfaChallenge] = useState(null) // { mfaToken, setup? } quando o backend exige 2º fator; null = tela normal
-    const [activeRole, setActiveRole] = useState('admin')
+    const [activeRole, setActiveRole] = useState('aluno') // tipo de conta no cadastro
     const [mode, setMode] = useState('login') // 'login' | 'register'
     const [success, setSuccess] = useState('')
     const [showRegisterPassword, setShowRegisterPassword] = useState(false)
@@ -102,22 +103,10 @@ const Login = ({ onLoginSuccess }) => {
         onLoginSuccess(userData.papel)
     }
 
-    // A aba escolhida precisa bater com o papel da conta; senão encerra a sessão recém-criada
-    const rejectRoleMismatch = (userData) => {
-        if (userData.papel === activeRole) return false
-        logout().catch(() => {})
-        setError(
-            `Esta conta é do tipo ${roleConfig[userData.papel]?.label || userData.papel}, ` +
-            `não ${roleConfig[activeRole].label}`
-        )
-        return true
-    }
-
     // Confirmação do código de MFA
     const handleMfaVerify = async (code) => {
         const userData = await verifyMfaCode(mfaChallenge.mfaToken, code)
         setMfaChallenge(null)
-        if (rejectRoleMismatch(userData)) return
         await completeLogin(userData)
     }
 
@@ -133,7 +122,6 @@ const Login = ({ onLoginSuccess }) => {
         setLoading(true)
 
         try {
-            // Aluno / Professor: chama o backend
             const userData = await login(formData.username, formData.password)
 
             // Backend sinaliza que falta o segundo fator — mostra o campo de código
@@ -149,8 +137,6 @@ const Login = ({ onLoginSuccess }) => {
                 setMfaChallenge({ mfaToken, setup })
                 return
             }
-
-            if (rejectRoleMismatch(userData)) return
 
             await completeLogin(userData)
 
@@ -301,8 +287,7 @@ const Login = ({ onLoginSuccess }) => {
     }
 
     const cfg = roleConfig[activeRole]
-    const CurrentIcon = cfg.icon
-    const accentColor = cfg.color
+    const accentColor = mode === 'register' ? cfg.color : LOGIN_COLOR
 
     return (
         <div className="min-h-screen flex items-center justify-center p-4"
@@ -337,31 +322,32 @@ const Login = ({ onLoginSuccess }) => {
                     <p className="text-sm text-gray-500 mb-5">
                         {mode === 'register'
                             ? 'Preencha os dados abaixo para se cadastrar'
-                            : 'Selecione seu perfil e faça login'}
+                            : 'Entre com seu usuário e senha'}
                     </p>
 
-                    {/* Seletor de papel */}
-                    <div className="flex gap-2 mb-5">
-                        {Object.entries(roleConfig).map(([key, c]) => {
-                            const Icon = c.icon
-                            const isActive = activeRole === key
-                            if (mode === 'register' && key === 'admin') return null
-                            return (
-                                <button key={key} type="button" onClick={() => switchRole(key)}
-                                    className="cursor-pointer flex-1 flex flex-col items-center gap-1 py-3 px-2 rounded-xl border-2 transition-all text-center"
-                                    style={{
-                                        borderColor: isActive ? c.color : '#e5e7eb',
-                                        backgroundColor: isActive ? c.color + '12' : 'transparent',
-                                        color: isActive ? c.color : '#6b7280',
-                                        transform: isActive ? 'translateY(-2px)' : 'none',
-                                        boxShadow: isActive ? `0 4px 16px ${c.color}30` : 'none',
-                                    }}>
-                                    <Icon size={18} />
-                                    <span className="text-[11px] font-bold">{c.label}</span>
-                                </button>
-                            )
-                        })}
-                    </div>
+                    {/* Tipo de conta (somente no cadastro) */}
+                    {mode === 'register' && (
+                        <div className="flex gap-2 mb-5">
+                            {Object.entries(roleConfig).map(([key, c]) => {
+                                const Icon = c.icon
+                                const isActive = activeRole === key
+                                return (
+                                    <button key={key} type="button" onClick={() => switchRole(key)}
+                                        className="cursor-pointer flex-1 flex flex-col items-center gap-1 py-3 px-2 rounded-xl border-2 transition-all text-center"
+                                        style={{
+                                            borderColor: isActive ? c.color : '#e5e7eb',
+                                            backgroundColor: isActive ? c.color + '12' : 'transparent',
+                                            color: isActive ? c.color : '#6b7280',
+                                            transform: isActive ? 'translateY(-2px)' : 'none',
+                                            boxShadow: isActive ? `0 4px 16px ${c.color}30` : 'none',
+                                        }}>
+                                        <Icon size={18} />
+                                        <span className="text-[11px] font-bold">{c.label}</span>
+                                    </button>
+                                )
+                            })}
+                        </div>
+                    )}
 
                     {/* Alerta de erro */}
                     {(error || retryAfter > 0) && (
@@ -445,13 +431,13 @@ const Login = ({ onLoginSuccess }) => {
                                     </span>
                                 ) : (
                                     <span className="flex items-center justify-center gap-2">
-                                        <CurrentIcon size={16} />
-                                        Entrar como {cfg.label}
+                                        <LogIn size={16} />
+                                        Entrar
                                     </span>
                                 )}
                             </button>
 
-                            {CADASTRO_PUBLICO && activeRole !== 'admin' && (
+                            {CADASTRO_PUBLICO && (
                                 <p className="text-xs text-center text-gray-500">
                                     Não tem conta?{' '}
                                     <button type="button" onClick={() => switchMode('register')}
@@ -631,13 +617,11 @@ const Login = ({ onLoginSuccess }) => {
                     <div className="relative z-10 text-center">
                         <div className="mx-auto mb-6 w-20 h-20 rounded-2xl flex items-center justify-center"
                             style={{ background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.2)', boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}>
-                            {mode === 'register' ? <UserPlus size={36} className="text-white" /> : <CurrentIcon size={36} className="text-white" />}
+                            {mode === 'register' ? <UserPlus size={36} className="text-white" /> : <LogIn size={36} className="text-white" />}
                         </div>
 
                         <h2 className="text-2xl font-black text-white mb-3 leading-tight">
-                            {mode === 'register'
-                                ? `Novo ${cfg.label}`
-                                : activeRole === 'admin' ? 'Painel Admin' : `Olá, ${cfg.label}!`}
+                            {mode === 'register' ? `Novo ${cfg.label}` : 'Olá!'}
                         </h2>
 
                         <p className="text-sm text-blue-200 leading-relaxed mb-8">

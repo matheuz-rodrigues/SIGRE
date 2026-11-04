@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { useSchedule } from '../Schedule/ScheduleContext'
 import api from '../../services/api'
 import { fetchCurrentUser, applyUserProfile } from '../../services/AuthService'
+import { getUser } from '../../services/sessionStore'
 import {
     X, Building2, Calendar, Clock, AlignLeft,
     Users, ChevronDown, CheckCircle2, Loader2, AlertCircle
@@ -72,9 +73,8 @@ const RoomRequestForm = ({ onClose, userRole, onSolicitacaoCriada }) => {
                     })
                 } catch {
                     if (cancelled) return
-                    const nome = localStorage.getItem('userName') || ''
-                    const email = localStorage.getItem('userEmail') || ''
-                    setLocked({ solicitante: nome, email })
+                    const user = getUser()
+                    setLocked({ solicitante: user?.nome || '', email: user?.email || '' })
                 } finally {
                     if (!cancelled) setLoadingProfile(false)
                 }

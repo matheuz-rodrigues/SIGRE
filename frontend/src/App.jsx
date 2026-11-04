@@ -6,42 +6,38 @@ import Footer from './components/Footer/Footer'
 import Login from './components/Login/Login'
 import Protection from './components/Protection/Protection'
 import UserView from './components/UserView/UserView'
-import { clearSession, restoreSession, logout } from './services/AuthService'
+import { clearSession, restoreSession, logout, purgeLegacyStorage } from './services/AuthService'
 
-const getInitialRole  = () => localStorage.getItem('userRole') || null
-const getInitialAdmin = () =>
-  localStorage.getItem('userRole') === 'admin' ||
-  localStorage.getItem('isAdminAuthenticated') === 'true'
+const isAdminRole = (role) => role === 'admin' || role === 'tecnico_adm'
 
 function App() {
-  const [userRole, setUserRole]   = useState(getInitialRole)
-  const [isAdmin,  setIsAdmin]    = useState(getInitialAdmin)
+  const [userRole, setUserRole]   = useState(null)
+  const [isAdmin,  setIsAdmin]    = useState(false)
   const [showLogin, setShowLogin] = useState(true)
+  const [restoring, setRestoring] = useState(true)
   const [sessionExpiredMsg, setSessionExpiredMsg] = useState(null)
 
   const isAuthenticated = userRole !== null
 
   useEffect(() => {
-    // Só tenta restaurar se havia sessão; a validade real está no cookie HttpOnly
-    if (!localStorage.getItem('userId')) return
+    purgeLegacyStorage()
+    // Nada fica salvo no navegador: a sessão é restaurada pelo cookie HttpOnly de refresh
     restoreSession()
       .then((me) => {
         setUserRole(me.papel)
-        setIsAdmin(me.papel === 'admin' || me.papel === 'tecnico_adm')
+        setIsAdmin(isAdminRole(me.papel))
       })
-      .catch((err) => {
-        if (err.response?.status === 401) {
-          clearSession()
-          setUserRole(null)
-          setIsAdmin(false)
-        }
+      .catch(() => {
+        clearSession()
+        setUserRole(null)
+        setIsAdmin(false)
       })
+      .finally(() => setRestoring(false))
   }, [])
 
   useEffect(() => {
     const handleSessionExpired = () => {
       clearSession()
-      localStorage.removeItem('isAdminAuthenticated')
       setUserRole(null)
       setIsAdmin(false)
       setShowLogin(true)
@@ -57,14 +53,13 @@ function App() {
 
   const handleSuccessLogin = (role) => {
     setUserRole(role)
-    if (role === 'admin' || role === 'tecnico_adm') setIsAdmin(true)
+    setIsAdmin(isAdminRole(role))
     setShowLogin(false)
     setSessionExpiredMsg(null)
   }
 
   const handleLogOut = () => {
     logout().catch(() => {})
-    localStorage.removeItem('isAdminAuthenticated')
 
     setUserRole(null)
     setIsAdmin(false)
@@ -82,6 +77,10 @@ function App() {
         <button onClick={() => setSessionExpiredMsg(null)} className="ml-2 text-amber-600 hover:text-amber-800 font-bold">&times;</button>
       </div>
     )
+  }
+
+  if (restoring) {
+    return <div className='min-h-screen bg-gray-50' aria-busy='true' />
   }
 
   if (isAdmin && isAuthenticated) {
