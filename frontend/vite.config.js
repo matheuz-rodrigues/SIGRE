@@ -35,6 +35,8 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
     headers: securityHeaders,
+    // O front não é consumido por outras origens: sem CORS (o padrão do Vite libera qualquer origem localhost)
+    cors: false,
     hmr: {
       clientPort: 8080,
     },
@@ -44,5 +46,6 @@ export default defineConfig({
   },
   preview: {
     headers: securityHeaders,
+    cors: false,
   },
 })

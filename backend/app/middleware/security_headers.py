@@ -16,6 +16,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         headers.setdefault("Referrer-Policy", "no-referrer")
         headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
         headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        # A resposta varia com a origem (CORS): impede cache compartilhado de servir a versão de outra origem
+        if "origin" not in headers.get("vary", "").lower():
+            headers.add_vary_header("Origin")
         # Swagger/ReDoc (só fora de produção) carregam scripts de CDN
         if not request.url.path.startswith(DOCS_PATHS):
             headers.setdefault("Content-Security-Policy", API_CSP)

@@ -32,6 +32,10 @@ class Settings(BaseSettings):
 	# Deve ser diferente de JWT_SECRET.
 	SESSION_SECRET: str = "change_me_super_secret"
 
+	# Flag Secure nos cookies. Só desligar em desenvolvimento num navegador que recuse
+	# cookies Secure em http://localhost (Chrome e Firefox aceitam).
+	COOKIE_SECURE: bool = True
+
 	# Origens do front-end autorizadas (CORS e verificação de Origin no CSRF).
 	# Se vazio, usa FRONTEND_URL e FRONTEND_PUBLIC_URL.
 	CORS_ORIGINS: list[str] = []
@@ -112,6 +116,8 @@ class Settings(BaseSettings):
 			errors.append("Origens do front-end devem usar HTTPS em produção")
 		if self.GOOGLE_CLIENT_ID and not self.GOOGLE_REDIRECT_URI.startswith("https://"):
 			errors.append("GOOGLE_REDIRECT_URI deve usar HTTPS em produção")
+		if not self.COOKIE_SECURE:
+			errors.append("COOKIE_SECURE deve ser true em produção")
 		errors.extend(self._database_errors())
 		if self.PROFESSOR_DEFAULT_PASSWORD.strip():
 			from app.schemas.user import validar_senha_forte

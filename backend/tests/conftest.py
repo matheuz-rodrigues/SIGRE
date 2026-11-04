@@ -58,7 +58,8 @@ def client(db_session):
     app.dependency_overrides[get_db] = override_get_db
     
     # Return fastapi TestClient
-    with TestClient(app) as c:
+    # https: os cookies de sessão têm a flag Secure e não seriam reenviados em http
+    with TestClient(app, base_url="https://testserver") as c:
         yield c
         
 from app.services.auth.security import create_access_token

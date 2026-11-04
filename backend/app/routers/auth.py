@@ -23,9 +23,10 @@ ACCESS_COOKIE = "access_token"
 REFRESH_COOKIE = "refresh_token"
 CSRF_COOKIE = "csrf_token"
 
-# Cookie config — secure=True apenas em produção (HTTPS)
-COOKIE_SECURE = settings.is_production
-COOKIE_SAMESITE = "lax"
+# Cookies de autenticação: sempre HttpOnly; Secure por padrão (navegadores aceitam em http://localhost);
+# SameSite=Strict porque front e API são same-site e nenhum fluxo precisa deles em navegação vinda de fora
+COOKIE_SECURE = settings.COOKIE_SECURE
+COOKIE_SAMESITE = "strict"
 COOKIE_HTTPONLY = True
 COOKIE_PATH = "/auth"
 COOKIE_MAX_AGE = settings.JWT_REFRESH_EXPIRES_DAYS * 24 * 60 * 60  # em segundos
@@ -58,7 +59,7 @@ def _set_refresh_cookie(response: Response, token: str):
 
 
 def _set_session_cookies(response: Response, access_token: str, csrf_token: str):
-    """Access token em cookie HttpOnly; token CSRF legível pelo front (double-submit)."""
+    """Access token e token CSRF em cookies HttpOnly; o front recebe o token CSRF no corpo da resposta."""
     response.set_cookie(
         key=ACCESS_COOKIE,
         value=access_token,
@@ -71,7 +72,7 @@ def _set_session_cookies(response: Response, access_token: str, csrf_token: str)
     response.set_cookie(
         key=CSRF_COOKIE,
         value=csrf_token,
-        httponly=False,
+        httponly=True,
         secure=COOKIE_SECURE,
         samesite=COOKIE_SAMESITE,
         max_age=COOKIE_MAX_AGE,
@@ -92,8 +93,8 @@ def _clear_refresh_cookie(response: Response):
 
 def _clear_all_cookies(response: Response):
     _clear_refresh_cookie(response)
-    for key, httponly in ((ACCESS_COOKIE, True), (CSRF_COOKIE, False)):
-        response.delete_cookie(key=key, path="/", httponly=httponly, secure=COOKIE_SECURE, samesite=COOKIE_SAMESITE)
+    for key in (ACCESS_COOKIE, CSRF_COOKIE):
+        response.delete_cookie(key=key, path="/", httponly=True, secure=COOKIE_SECURE, samesite=COOKIE_SAMESITE)
 
 
 def _start_session(response: Response, result: dict) -> dict:

@@ -5,7 +5,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.config import get_settings
 from app.try_database import Base, engine
 from contextlib import asynccontextmanager
-from fastapi.middleware.cors import CORSMiddleware
+from app.middleware.cors import StrictCORSMiddleware
 from app.logging_config import configure_logging
 from app.middleware.audit import AuditMiddleware
 from app.middleware.csrf import CSRFMiddleware
@@ -94,12 +94,13 @@ app.add_middleware(
     SessionMiddleware, 
     secret_key=settings.SESSION_SECRET,
     session_cookie="sigre_session",
+    # Lax (não Strict): o retorno do Google até /google/callback é uma navegação vinda de outro site
     same_site="lax",
-    https_only=settings.is_production,
+    https_only=settings.COOKIE_SECURE,
     max_age=3600
 )
 app.add_middleware(
-    CORSMiddleware,
+    StrictCORSMiddleware,
     allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],

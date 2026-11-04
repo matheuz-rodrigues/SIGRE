@@ -49,6 +49,14 @@ Segunda rodada (branch `fix/ajustes-seguranca-dspd`):
 - Sem os cabeçalhos `Date` e `Server` na API (`uvicorn --no-date-header --no-server-header`) e sem `Date` no Vite.
   O nginx de produção já oculta a versão (`server_tokens off`), mas continua enviando `Date` e `Server: nginx`:
   removê-los exige o módulo `headers-more`, que a imagem `nginx:alpine` não inclui.
+- CORS: origem recusada não recebe nenhum cabeçalho `Access-Control-*` (o Starlette devolvia `Allow-Credentials`,
+  métodos e headers mesmo recusando) e toda resposta da API tem `Vary: Origin`. O servidor do Vite não responde
+  mais a CORS (liberava qualquer origem `localhost`).
+- Cookies: todos com `HttpOnly` e `Secure`. `access_token`, `refresh_token` e `csrf_token` com `SameSite=Strict`;
+  `sigre_session` (OAuth Google) com `SameSite=Lax`, porque o retorno do Google é uma navegação vinda de outro site.
+  O `csrf_token` virou HttpOnly: o front recebe o valor no corpo da resposta e nunca lê `document.cookie`.
+  `COOKIE_SECURE` (padrão `true`, obrigatório em produção) só deve ser desligado em desenvolvimento num navegador
+  que recuse cookies `Secure` em `http://localhost`; Chrome e Firefox aceitam.
 
 ## Fluxo de autenticação
 
@@ -59,7 +67,7 @@ Segunda rodada (branch `fix/ajustes-seguranca-dspd`):
 5. Clientes de API podem usar `POST /auth/token` + `Authorization: Bearer`, exceto perfis com MFA.
 
 Requisito de implantação: front-end e API precisam ser *same-site* (mesmo domínio registrável, por exemplo
-`sigra.uepa.br` e `api.sigra.uepa.br`). Os cookies usam `SameSite=Lax` e não são enviados em chamadas entre
+`sigra.uepa.br` e `api.sigra.uepa.br`). Os cookies de autenticação usam `SameSite=Strict` e não são enviados em chamadas entre
 sites diferentes (por exemplo, front em `*.cloudfront.net` e API em outro domínio).
 
 Recuperação do MFA (celular perdido):

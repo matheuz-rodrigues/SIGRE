@@ -89,9 +89,10 @@ def test_login_sets_httponly_cookies_and_csrf(client, db_session):
     resp = _login(client, "cookieuser")
     assert resp.status_code == 200
     assert "access_token" not in resp.json()
-    set_cookie = ",".join(resp.headers.get_list("set-cookie"))
-    assert "access_token=" in set_cookie and "HttpOnly" in set_cookie
-    assert "SameSite=lax" in set_cookie
+    cookies = resp.headers.get_list("set-cookie")
+    assert {c.split("=", 1)[0] for c in cookies} == {"access_token", "refresh_token", "csrf_token"}
+    for cookie in cookies:
+        assert "HttpOnly" in cookie and "Secure" in cookie and "SameSite=strict" in cookie, cookie
     assert client.get("/users/me").status_code == 200
 
 
@@ -292,11 +293,35 @@ def test_security_headers_present(client):
     assert headers["Referrer-Policy"] == "no-referrer"
 
 
-def test_cors_rejects_unknown_origin(client):
+@pytest.mark.parametrize("origin", [
+    "https://evil.example", "null", "http://localhost:8080.evil.com",
+    "http://localhost:8081", "https://localhost:8080", "http://localhost:8080/",
+])
+def test_cors_rejects_unknown_origin(client, origin):
     resp = client.options("/auth/login", headers={
-        "Origin": "https://evil.example", "Access-Control-Request-Method": "POST",
+        "Origin": origin, "Access-Control-Request-Method": "POST",
     })
-    assert resp.headers.get("access-control-allow-origin") is None
+    assert resp.status_code == 400
+    # Nenhum cabeçalho CORS para origem recusada (nem Allow-Credentials)
+    assert not [h for h in resp.headers if h.lower().startswith("access-control-")]
+    simple = client.get("/health", headers={"Origin": origin})
+    assert simple.headers.get("access-control-allow-origin") is None
+    assert "Origin" in simple.headers.get("vary", "")
+
+
+def test_cors_allows_configured_origin_with_credentials(client):
+    origin = settings.allowed_origins[0]
+    resp = client.options("/auth/login", headers={
+        "Origin": origin, "Access-Control-Request-Method": "POST",
+    })
+    assert resp.headers["access-control-allow-origin"] == origin
+    assert resp.headers["access-control-allow-credentials"] == "true"
+    assert resp.headers.get("vary") == "Origin"
+
+
+def test_production_requires_secure_cookies():
+    with pytest.raises(RuntimeError, match="COOKIE_SECURE"):
+        _hardened(COOKIE_SECURE=False).validate_for_production()
 
 
 def test_production_rejects_default_secrets():
