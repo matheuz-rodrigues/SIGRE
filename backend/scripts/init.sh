@@ -16,5 +16,7 @@ fi
 
 # --proxy-headers: usa X-Forwarded-For/Proto apenas dos proxies listados em FORWARDED_ALLOW_IPS
 # (IP real no rate limit e https correto no callback OAuth atrás do proxy TLS)
+# --no-server-header / --no-date-header: não expõe o servidor (uvicorn) nem o relógio da máquina
 uvicorn app.main:app --host 0.0.0.0 --port 8000 $RELOAD_FLAG \
-    --proxy-headers --forwarded-allow-ips "${FORWARDED_ALLOW_IPS:-127.0.0.1}"
+    --proxy-headers --forwarded-allow-ips "${FORWARDED_ALLOW_IPS:-127.0.0.1}" \
+    --no-server-header --no-date-header

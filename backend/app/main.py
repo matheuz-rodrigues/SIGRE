@@ -106,7 +106,7 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization", "X-CSRF-Token"],
     expose_headers=["Retry-After"],
 )
-app.add_middleware(SecurityHeadersMiddleware, hsts=settings.is_production)
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(solicitations.router)
 app.include_router(auth.router)

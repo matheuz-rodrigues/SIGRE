@@ -44,6 +44,11 @@ Segunda rodada (branch `fix/ajustes-seguranca-dspd`):
 - Login único: a tela não tem mais abas de perfil (Administrador/Aluno/Professor/Técnico) nem textos que indiquem
   a existência de um painel administrativo; o papel vem do back-end após a autenticação. O cadastro continua com a
   escolha do tipo de conta.
+- HSTS enviado sempre pela API (antes só com `ENV=production`) e pelo servidor local do Vite, que agora também
+  manda `X-Frame-Options`, `nosniff`, `Referrer-Policy` e `Permissions-Policy`. O navegador ignora HSTS em `http://`.
+- Sem os cabeçalhos `Date` e `Server` na API (`uvicorn --no-date-header --no-server-header`) e sem `Date` no Vite.
+  O nginx de produção já oculta a versão (`server_tokens off`), mas continua enviando `Date` e `Server: nginx`:
+  removê-los exige o módulo `headers-more`, que a imagem `nginx:alpine` não inclui.
 
 ## Fluxo de autenticação
 

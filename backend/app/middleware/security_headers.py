@@ -8,10 +8,6 @@ DOCS_PATHS = ("/docs", "/redoc")
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, hsts: bool):
-        super().__init__(app)
-        self.hsts = hsts
-
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
         headers = response.headers
@@ -23,6 +19,6 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Swagger/ReDoc (só fora de produção) carregam scripts de CDN
         if not request.url.path.startswith(DOCS_PATHS):
             headers.setdefault("Content-Security-Policy", API_CSP)
-        if self.hsts:
-            headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        # Sempre enviado; o navegador só o aplica em respostas HTTPS (ignorado em http://localhost)
+        headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         return response
