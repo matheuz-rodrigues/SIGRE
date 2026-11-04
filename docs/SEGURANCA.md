@@ -25,6 +25,21 @@ Outros ajustes encontrados na revisão do código:
 - O access token ficava no `localStorage`; agora fica só em cookie `HttpOnly` e o front envia `X-CSRF-Token`.
 - O callback do Google imprimia o `state` da sessão no log e devolvia o texto da exceção ao cliente.
 
+Segunda rodada (branch `fix/ajustes-seguranca-dspd`):
+
+- Refresh tokens: o banco guarda só o SHA-256 do token (gerado com `secrets.token_urlsafe`). Reapresentar um
+  token já rotacionado/revogado encerra todas as sessões do usuário e gera o evento `auth.refresh.reuse`
+  (tolerância de 30 s para duas abas renovando ao mesmo tempo).
+- Conta recusada, voltada a pendente ou excluída perde o acesso na hora: `get_current_user` confere o status
+  a cada requisição, e recusa/exclusão/troca de status revogam os refresh tokens.
+- Troca de senha encerra as sessões dos outros dispositivos; a sessão atual recebe um refresh token novo.
+- `GET /users/` restrito a admin e técnico (antes: qualquer usuário autenticado listava nome, e-mail e telefone de todos).
+- `POST /solicitations/` exige login; solicitante, e-mail e papel vêm da sessão, não do corpo
+  (antes: qualquer pessoa criava solicitações em nome de qualquer e-mail, que apareciam em "Minhas solicitações" da vítima).
+- Usuário comum não altera o próprio e-mail ou username (burlava o domínio institucional do cadastro).
+- Produção recusa a subida com senha de banco padrão/curta em `DATABASE_URL` e com `PROFESSOR_DEFAULT_PASSWORD` fraca.
+- OAuth Google: `state` de uso único; client ID/secret lidos sempre do ambiente e não mais copiados para `google_credentials`.
+
 ## Fluxo de autenticação
 
 1. `POST /auth/login` valida senha e limite de tentativas.
@@ -80,6 +95,15 @@ Execute em cada ambiente compartilhado ou de produção que já tenha usado valo
    `UPDATE refresh_tokens SET revoked_at = now() WHERE revoked_at IS NULL;`
 5. Se o admin inicial foi criado com senha de exemplo, troque a senha pelo painel e remova `ADMIN_SEED_PASSWORD` do ambiente.
 
+Na primeira implantação desta versão (o `init.sh` usa `create_all` + `alembic stamp`, então rode manualmente):
+
+```sql
+-- Refresh tokens antigos estavam em texto puro e não são mais aceitos (todos fazem login de novo)
+DELETE FROM refresh_tokens WHERE revoked_at IS NULL OR expires_at < now();
+-- O client secret do Google não fica mais no banco
+UPDATE google_credentials SET client_id = NULL, client_secret = NULL;
+```
+
 A `MFA_ENCRYPTION_KEY` não deve ser trocada sem migração: os segredos TOTP já cadastrados deixariam de ser lidos.
 Se for necessário trocá-la, apague a tabela `user_mfa` (`DELETE FROM user_mfa;`) para que todos recadastrem o MFA.
 
@@ -93,6 +117,9 @@ sum(count_over_time({container="sigra_backend"} | json | message="auth.login.fai
 
 # Contas ou IPs bloqueados
 sum(count_over_time({container="sigra_backend"} | json | message=~"auth\\..*\\.locked" [10m])) > 0
+
+# Refresh token reutilizado (provável roubo de sessão; todas as sessões do usuário foram encerradas)
+sum(count_over_time({container="sigra_backend"} | json | message="auth.refresh.reuse" [10m])) > 0
 
 # Alterações em usuários (aprovação, exclusão, edição) para revisão periódica
 {container="sigra_backend"} | json | message="http.change" | path=~"/users/.*" | status < 400
@@ -118,6 +145,13 @@ GROUP BY ip ORDER BY 2 DESC;
 
 ## Pontos para o time decidir
 
-- `GET /users/` lista todos os usuários para qualquer usuário autenticado.
-- `POST /solicitations/` é público (sem autenticação).
-- Refresh tokens são guardados em texto no banco; guardar apenas o hash reduziria o impacto de um vazamento do banco.
+- O cadastro público aceita o papel `tecnico_adm` (fica pendente). Como o técnico passa nas checagens de admin
+  por nível mínimo, aprovar um cadastro desses por engano dá acesso quase administrativo. Avaliar se técnicos
+  devem ser criados só pelo admin.
+- `PROFESSOR_DEFAULT_PASSWORD` é uma senha compartilhada pelos professores importados por planilha. O ideal é
+  obrigar a troca no primeiro acesso (exige mudança no front) ou deixá-la vazia e usar um fluxo de redefinição.
+- O primeiro cadastro do MFA de admin/técnico depende só da senha: quem tiver a senha antes do dono
+  configurar o MFA consegue cadastrá-lo. Configurar o MFA dos perfis administrativos logo após criá-los.
+- A CSP do front usa `style-src 'unsafe-inline'` (sonner e Radix injetam `<style>`); o plano previa `style-src 'self'`.
+- A porta da API (`BACKEND_PORT`) é publicada em todas as interfaces no `docker-compose.prod.yml`; se o proxy
+  do Data Center estiver no mesmo host, publicar só em `127.0.0.1`.
