@@ -1,117 +1,125 @@
-"""MFA por TOTP (RFC 6238) para perfis administrativos e técnicos."""
-import base64
+"""MFA por código de 6 dígitos enviado ao e-mail da conta (perfis administrativos e técnicos)."""
 import hashlib
-from datetime import datetime, timezone
+import hmac
+import logging
+import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-import pyotp
-import segno
-from cryptography.fernet import Fernet, InvalidToken
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.models.mfa_code import MfaCode
 from app.models.user import Usuario
-from app.models.user_mfa import UserMfa
+from app.services.auth import rate_limit
+from app.services.infra.email import EmailDeliveryError, send_email
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
-TOTP_INTERVAL = 30
-# Aceita o passo anterior e o seguinte para tolerar relógios levemente fora de sincronia
-TOTP_VALID_WINDOW = 1
+CODE_LENGTH = 6
 
 
 def mfa_required_for(user: Usuario) -> bool:
     return int(user.tipo_usuario or 1) in settings.MFA_REQUIRED_ROLES
 
 
-def _fernet() -> Fernet:
-    if settings.MFA_ENCRYPTION_KEY:
-        return Fernet(settings.MFA_ENCRYPTION_KEY.encode())
-    if settings.ENV == "development":
-        # Conveniência local: chave derivada do JWT_SECRET. Produção exige chave própria
-        # (Settings.validate_for_production).
-        digest = hashlib.sha256(f"mfa:{settings.JWT_SECRET}".encode()).digest()
-        return Fernet(base64.urlsafe_b64encode(digest))
-    raise HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="MFA não configurado no servidor",
+def _now() -> datetime:
+    return datetime.now(tz=timezone.utc)
+
+
+def _aware(dt: datetime) -> datetime:
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def mask_email(email: str) -> str:
+    """'pentest.admin@uepa.br' -> 'pe***@uepa.br' (o usuário reconhece a conta sem expor o endereço)."""
+    local, _, domain = email.partition("@")
+    return f"{local[:2]}***@{domain}"
+
+
+def _hash(user_id: int, code: str) -> str:
+    return hmac.new(settings.JWT_SECRET.encode(), f"{user_id}:{code}".encode(), hashlib.sha256).hexdigest()
+
+
+def get_record(db: Session, user_id: int) -> Optional[MfaCode]:
+    return db.query(MfaCode).filter(MfaCode.user_id == user_id).first()
+
+
+def _active(record: Optional[MfaCode]) -> bool:
+    return bool(
+        record
+        and _aware(record.expires_at) > _now()
+        and record.attempts < settings.MFA_CODE_MAX_ATTEMPTS
     )
 
 
-def _decrypt(record: UserMfa) -> str:
-    try:
-        return _fernet().decrypt(record.secret_encrypted.encode()).decode()
-    except InvalidToken:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Não foi possível validar o MFA",
-        )
+def send_code_email(user: Usuario, code: str) -> None:
+    if not settings.SMTP_HOST:
+        if settings.is_production:
+            raise EmailDeliveryError("SMTP não configurado")
+        # Apenas desenvolvimento local sem SMTP (a validação de produção exige SMTP_HOST)
+        logger.warning("SMTP não configurado: código de verificação de %s = %s", user.email, code)
+        return
+    send_email(
+        user.email,
+        "Seu código de acesso ao SIGRA",
+        f"Olá, {user.nome}.\n\n"
+        f"Seu código de acesso ao SIGRA é: {code}\n\n"
+        f"Ele vale por {settings.MFA_CODE_TTL_MINUTES} minutos e só pode ser usado uma vez.\n"
+        "Não compartilhe este código com ninguém. A equipe do SIGRA nunca pede este código.\n\n"
+        "Se não foi você que tentou entrar, troque sua senha assim que possível.\n",
+    )
 
 
-def get_record(db: Session, user_id: int) -> Optional[UserMfa]:
-    return db.query(UserMfa).filter(UserMfa.user_id == user_id).first()
+def issue_code(db: Session, user: Usuario, ip: Optional[str], force: bool = False) -> None:
+    """Gera e envia um novo código.
 
-
-def is_enabled(db: Session, user_id: int) -> bool:
-    record = get_record(db, user_id)
-    return bool(record and record.enabled_at)
-
-
-def start_setup(db: Session, user: Usuario) -> dict:
-    """Gera (ou regera, enquanto não confirmado) o segredo TOTP e devolve o QR code."""
+    Sem `force` (login), reaproveita o código ainda ativo enviado há pouco, para um segundo
+    login seguido não disparar outro e-mail. Com `force` (reenviar), respeita o intervalo mínimo.
+    """
     record = get_record(db, user.id)
-    if record and record.enabled_at:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="MFA já configurado")
+    if not force and _active(record):
+        since_sent = (_now() - _aware(record.sent_at)).total_seconds()
+        if since_sent < settings.MFA_RESEND_COOLDOWN_SECONDS:
+            return
 
-    secret = pyotp.random_base32()
-    encrypted = _fernet().encrypt(secret.encode()).decode()
-    if record:
-        record.secret_encrypted = encrypted
-        record.last_used_step = None
-    else:
-        db.add(UserMfa(
-            user_id=user.id,
-            secret_encrypted=encrypted,
-            created_at=datetime.now(tz=timezone.utc),
-        ))
+    identifier = f"uid:{user.id}"
+    rate_limit.ensure_mfa_send_allowed(db, identifier, ip, enforce_cooldown=force)
+
+    code = "".join(secrets.choice("0123456789") for _ in range(CODE_LENGTH))
+    now = _now()
+    if record is None:
+        record = MfaCode(user_id=user.id)
+        db.add(record)
+    record.code_hash = _hash(user.id, code)
+    record.attempts = 0
+    record.sent_at = now
+    record.expires_at = now + timedelta(minutes=settings.MFA_CODE_TTL_MINUTES)
     db.commit()
 
-    uri = pyotp.TOTP(secret, interval=TOTP_INTERVAL).provisioning_uri(
-        name=user.email, issuer_name=settings.MFA_ISSUER_NAME
-    )
-    return {
-        "otpauth_uri": uri,
-        "qr_code": segno.make(uri, error="m").svg_data_uri(scale=5),
-        "secret": secret,
-    }
+    try:
+        send_code_email(user, code)
+    except EmailDeliveryError:
+        logger.exception("Falha ao enviar o código de MFA (user_id=%s)", user.id)
+        db.delete(record)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Não foi possível enviar o código agora. Tente novamente em instantes.",
+        )
+    rate_limit.record_event(db, rate_limit.EVENT_MFA_SEND, identifier, ip, success=True, user_id=user.id)
 
 
 def verify_code(db: Session, user_id: int, code: str) -> bool:
-    """Confere o código; ativa o MFA no primeiro acerto e bloqueia reutilização do mesmo passo."""
+    """Confere o código; uso único, com validade e número máximo de tentativas."""
     record = get_record(db, user_id)
-    if not record or not code or not code.isdigit() or len(code) != 6:
+    if not _active(record) or not code or not code.isdigit() or len(code) != CODE_LENGTH:
         return False
-
-    totp = pyotp.TOTP(_decrypt(record), interval=TOTP_INTERVAL)
-    now = datetime.now(tz=timezone.utc)
-    current_step = totp.timecode(now)
-    for offset in range(-TOTP_VALID_WINDOW, TOTP_VALID_WINDOW + 1):
-        step = current_step + offset
-        if record.last_used_step is not None and step <= record.last_used_step:
-            continue
-        if pyotp.utils.strings_equal(totp.generate_otp(step), code):
-            record.last_used_step = step
-            if not record.enabled_at:
-                record.enabled_at = now
-            db.commit()
-            return True
-    return False
-
-
-def reset(db: Session, user_id: int) -> bool:
-    record = get_record(db, user_id)
-    if not record:
+    if not hmac.compare_digest(record.code_hash, _hash(user_id, code)):
+        record.attempts += 1
+        db.commit()
         return False
     db.delete(record)
     db.commit()

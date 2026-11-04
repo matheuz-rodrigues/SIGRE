@@ -33,7 +33,14 @@ services:
       - PORT=8000
       - JWT_SECRET=${JWT_SECRET:?defina JWT_SECRET}
       - SESSION_SECRET=${SESSION_SECRET:?defina SESSION_SECRET}
-      - MFA_ENCRYPTION_KEY=${MFA_ENCRYPTION_KEY:?defina MFA_ENCRYPTION_KEY}
+      # Envio do código de MFA por e-mail (admin e técnico)
+      - SMTP_HOST=${SMTP_HOST:?defina SMTP_HOST para o envio do código de MFA}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-SIGRA UEPA <nao-responda@uepa.br>}
+      - SMTP_STARTTLS=${SMTP_STARTTLS:-true}
+      - SMTP_SSL=${SMTP_SSL:-false}
       - CORS_ORIGINS=${CORS_ORIGINS:?defina CORS_ORIGINS com as origens https do front}
       - ENABLE_DOCS=${ENABLE_DOCS:-false}
       - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-127.0.0.1}

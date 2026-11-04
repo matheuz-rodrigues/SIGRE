@@ -14,7 +14,7 @@ EXEMPT_PATHS = {
     "/auth/register",
     "/auth/refresh",
     "/auth/logout",
-    "/auth/mfa/setup",
+    "/auth/mfa/resend",
     "/auth/mfa/verify",
 }
 

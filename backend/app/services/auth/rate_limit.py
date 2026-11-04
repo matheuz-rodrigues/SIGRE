@@ -21,6 +21,8 @@ audit_logger = logging.getLogger("sigra.audit")
 EVENT_LOGIN = "login"
 EVENT_MFA = "mfa"
 EVENT_REGISTER = "register"
+# Envio do código de MFA por e-mail (limita reenvios e o uso do login para bombardear a caixa de entrada)
+EVENT_MFA_SEND = "mfa_send"
 
 
 def _now() -> datetime:
@@ -155,3 +157,28 @@ def ensure_registration_allowed(db: Session, ip: Optional[str]) -> None:
     if wait > 0:
         audit_logger.warning("auth.register.locked", extra={"event": "auth.register.locked", "ip": ip, "retry_after": math.ceil(wait)})
         raise _too_many(wait, "Muitas tentativas de cadastro. Tente novamente mais tarde.")
+
+
+def ensure_mfa_send_allowed(db: Session, identifier: str, ip: Optional[str], enforce_cooldown: bool = True) -> None:
+    """Máximo de envios por usuário na janela e, no reenvio, intervalo mínimo entre envios."""
+    now = _now()
+    window = timedelta(minutes=settings.LOGIN_FAILURE_WINDOW_MINUTES)
+    sends = db.query(AuthEvent.created_at).filter(
+        AuthEvent.event_type == EVENT_MFA_SEND,
+        AuthEvent.identifier == identifier,
+        AuthEvent.created_at >= now - window,
+    ).order_by(AuthEvent.created_at.desc()).all()
+
+    wait = 0.0
+    if sends and enforce_cooldown:
+        cooldown_end = _aware(sends[0][0]) + timedelta(seconds=settings.MFA_RESEND_COOLDOWN_SECONDS)
+        wait = (cooldown_end - now).total_seconds()
+    if len(sends) >= settings.MFA_MAX_SENDS_PER_WINDOW:
+        oldest = _aware(sends[settings.MFA_MAX_SENDS_PER_WINDOW - 1][0])
+        wait = max(wait, (oldest + window - now).total_seconds())
+    if wait > 0:
+        audit_logger.warning(
+            "auth.mfa_send.locked",
+            extra={"event": "auth.mfa_send.locked", "identifier": identifier, "ip": ip, "retry_after": math.ceil(wait)},
+        )
+        raise _too_many(wait, "Aguarde para pedir um novo código.")

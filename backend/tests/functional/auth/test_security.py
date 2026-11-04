@@ -3,9 +3,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch, MagicMock
 
 import jwt
-import pyotp
 import pytest
-from cryptography.fernet import Fernet
 
 from app.config import Settings, get_settings
 from app.models.user import Usuario
@@ -231,41 +229,140 @@ def test_user_cannot_promote_self(client, db_session):
     assert user.tipo_usuario == 1
 
 
-# ---------- MFA (TOTP) ----------
+# ---------- MFA (código por e-mail) ----------
 
 @pytest.fixture
 def mfa_enforced(monkeypatch):
+    """Exige MFA para admin/técnico e captura os e-mails em vez de enviá-los."""
     monkeypatch.setattr(settings, "MFA_REQUIRED_ROLES", [3, 4])
-    monkeypatch.setattr(settings, "MFA_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    sent = []
+    monkeypatch.setattr("app.services.auth.mfa.send_code_email", lambda user, code: sent.append((user.email, code)))
+    return sent
 
 
-def test_mfa_setup_and_verify_flow(client, db_session, mfa_enforced):
+def _mfa_record(db, user):
+    from app.models.mfa_code import MfaCode
+    db.expire_all()
+    return db.query(MfaCode).filter(MfaCode.user_id == user.id).first()
+
+
+def test_mfa_email_flow(client, db_session, mfa_enforced):
     _make_user(db_session, "tecmfa@uepa.br", "tecmfa", tipo=4)
 
     first = _login(client, "tecmfa").json()
-    assert first == {"mfa_setup_required": True, "mfa_token": first["mfa_token"]}
+    assert first == {
+        "mfa_required": True, "mfa_method": "email",
+        "email_hint": "te***@uepa.br", "mfa_token": first["mfa_token"],
+    }
     assert client.cookies.get("access_token") is None
+    assert len(mfa_enforced) == 1 and mfa_enforced[0][0] == "tecmfa@uepa.br"
+    code = mfa_enforced[0][1]
+    assert len(code) == 6 and code.isdigit()
 
-    setup = client.post("/auth/mfa/setup", json={"mfa_token": first["mfa_token"]}).json()
-    assert setup["qr_code"].startswith("data:image/svg+xml")
-    totp = pyotp.TOTP(setup["secret"])
+    wrong = "000000" if code != "000000" else "111111"
+    assert client.post("/auth/mfa/verify", json={"mfa_token": first["mfa_token"], "code": wrong}).status_code == 401
 
-    bad = client.post("/auth/mfa/verify", json={"mfa_token": first["mfa_token"], "code": "000000"})
-    assert bad.status_code == 401
-
-    code = totp.now()
     ok = client.post("/auth/mfa/verify", json={"mfa_token": first["mfa_token"], "code": code})
     assert ok.status_code == 200
     assert ok.json()["papel"] == "tecnico_adm"
     assert client.cookies.get("access_token")
 
-    # Próximo login pede só o código, e o mesmo código não pode ser reutilizado
+    # Uso único: o mesmo código não vale num novo login
     client.cookies.clear()
     second = _login(client, "tecmfa").json()
-    assert second["mfa_required"] is True
-    replay = client.post("/auth/mfa/verify", json={"mfa_token": second["mfa_token"], "code": code})
-    assert replay.status_code == 401
-    assert client.post("/auth/mfa/setup", json={"mfa_token": second["mfa_token"]}).status_code == 409
+    assert client.post("/auth/mfa/verify", json={"mfa_token": second["mfa_token"], "code": code}).status_code == 401
+
+
+def test_mfa_code_is_not_stored_in_plaintext(client, db_session, mfa_enforced):
+    user = _make_user(db_session, "hashmfa@uepa.br", "hashmfa", tipo=3)
+    _login(client, "hashmfa")
+    code = mfa_enforced[-1][1]
+    record = _mfa_record(db_session, user)
+    assert record.code_hash != code and code not in record.code_hash
+
+
+def test_mfa_code_expires(client, db_session, mfa_enforced):
+    user = _make_user(db_session, "expmfa@uepa.br", "expmfa", tipo=3)
+    token = _login(client, "expmfa").json()["mfa_token"]
+    record = _mfa_record(db_session, user)
+    record.expires_at = datetime.now(tz=timezone.utc) - timedelta(seconds=1)
+    db_session.commit()
+    resp = client.post("/auth/mfa/verify", json={"mfa_token": token, "code": mfa_enforced[-1][1]})
+    assert resp.status_code == 401
+
+
+def test_mfa_code_invalidated_after_max_attempts(client, db_session, mfa_enforced, monkeypatch):
+    monkeypatch.setattr(settings, "MFA_CODE_MAX_ATTEMPTS", 3)
+    _make_user(db_session, "attmfa@uepa.br", "attmfa", tipo=3)
+    token = _login(client, "attmfa").json()["mfa_token"]
+    code = mfa_enforced[-1][1]
+    wrong = "000000" if code != "000000" else "111111"
+    for _ in range(3):
+        client.post("/auth/mfa/verify", json={"mfa_token": token, "code": wrong})
+    assert client.post("/auth/mfa/verify", json={"mfa_token": token, "code": code}).status_code == 401
+
+
+def test_second_login_within_cooldown_reuses_code(client, db_session, mfa_enforced):
+    _make_user(db_session, "dupmfa@uepa.br", "dupmfa", tipo=3)
+    _login(client, "dupmfa")
+    second = _login(client, "dupmfa").json()
+    assert len(mfa_enforced) == 1
+    resp = client.post("/auth/mfa/verify", json={"mfa_token": second["mfa_token"], "code": mfa_enforced[0][1]})
+    assert resp.status_code == 200
+
+
+def test_mfa_resend_respects_cooldown_and_replaces_code(client, db_session, mfa_enforced):
+    from app.models.auth_event import AuthEvent
+    user = _make_user(db_session, "resmfa@uepa.br", "resmfa", tipo=3)
+    token = _login(client, "resmfa").json()["mfa_token"]
+    old_code = mfa_enforced[-1][1]
+
+    too_soon = client.post("/auth/mfa/resend", json={"mfa_token": token})
+    assert too_soon.status_code == 429
+    assert int(too_soon.headers["Retry-After"]) > 0
+
+    db_session.query(AuthEvent).filter(
+        AuthEvent.event_type == "mfa_send", AuthEvent.user_id == user.id
+    ).update({AuthEvent.created_at: datetime.now(tz=timezone.utc) - timedelta(minutes=2)})
+    db_session.commit()
+
+    resent = client.post("/auth/mfa/resend", json={"mfa_token": token})
+    assert resent.status_code == 200
+    assert resent.json()["email_hint"] == "re***@uepa.br"
+    new_code = mfa_enforced[-1][1]
+    if new_code != old_code:
+        assert client.post("/auth/mfa/verify", json={"mfa_token": token, "code": old_code}).status_code == 401
+    assert client.post("/auth/mfa/verify", json={"mfa_token": token, "code": new_code}).status_code == 200
+
+
+def test_mfa_send_limit_per_window(client, db_session, mfa_enforced, monkeypatch):
+    monkeypatch.setattr(settings, "MFA_RESEND_COOLDOWN_SECONDS", 0)
+    monkeypatch.setattr(settings, "MFA_MAX_SENDS_PER_WINDOW", 2)
+    _make_user(db_session, "bombmfa@uepa.br", "bombmfa", tipo=3)
+    token = _login(client, "bombmfa").json()["mfa_token"]
+    assert client.post("/auth/mfa/resend", json={"mfa_token": token}).status_code == 200
+    assert client.post("/auth/mfa/resend", json={"mfa_token": token}).status_code == 429
+    assert len(mfa_enforced) == 2
+
+
+def test_mfa_email_failure_returns_503(client, db_session, monkeypatch):
+    from app.services.infra.email import EmailDeliveryError
+    monkeypatch.setattr(settings, "MFA_REQUIRED_ROLES", [3, 4])
+
+    def fail(user, code):
+        raise EmailDeliveryError("smtp fora do ar")
+    monkeypatch.setattr("app.services.auth.mfa.send_code_email", fail)
+    user = _make_user(db_session, "failmfa@uepa.br", "failmfa", tipo=3)
+    assert _login(client, "failmfa").status_code == 503
+    assert _mfa_record(db_session, user) is None
+
+
+def test_mfa_token_cannot_resend_for_deleted_user(client, db_session, mfa_enforced):
+    user = _make_user(db_session, "delmfa@uepa.br", "delmfa", tipo=4)
+    token = create_mfa_token(user.id)
+    user.deleted_at = datetime.now(tz=timezone.utc)
+    db_session.commit()
+    assert client.post("/auth/mfa/resend", json={"mfa_token": token}).status_code == 401
 
 
 def test_mfa_roles_cannot_use_password_only_token_endpoint(client, db_session, mfa_enforced):
@@ -277,10 +374,24 @@ def test_mfa_roles_cannot_use_password_only_token_endpoint(client, db_session, m
 def test_mfa_verify_is_rate_limited(client, db_session, mfa_enforced):
     _make_user(db_session, "mfabrute@uepa.br", "mfabrute", tipo=4)
     token = _login(client, "mfabrute").json()["mfa_token"]
-    client.post("/auth/mfa/setup", json={"mfa_token": token})
     for _ in range(settings.LOGIN_MAX_FAILURES):
         client.post("/auth/mfa/verify", json={"mfa_token": token, "code": "000000"})
     assert client.post("/auth/mfa/verify", json={"mfa_token": token, "code": "000000"}).status_code == 429
+
+
+def test_send_email_uses_starttls_and_login(monkeypatch):
+    from app.services.infra import email as email_mod
+    monkeypatch.setattr(email_mod.settings, "SMTP_HOST", "smtp.uepa.br")
+    monkeypatch.setattr(email_mod.settings, "SMTP_USER", "sigra")
+    monkeypatch.setattr(email_mod.settings, "SMTP_PASSWORD", "x")
+    server = MagicMock()
+    server.__enter__.return_value = server
+    with patch.object(email_mod.smtplib, "SMTP", return_value=server) as smtp:
+        email_mod.send_email("a@uepa.br", "assunto", "corpo")
+    smtp.assert_called_once()
+    server.starttls.assert_called_once()
+    server.login.assert_called_once_with("sigra", "x")
+    server.send_message.assert_called_once()
 
 
 # ---------- Cabeçalhos e configuração ----------
@@ -336,7 +447,7 @@ def test_production_accepts_hardened_config():
         PROFESSOR_DEFAULT_PASSWORD="",
         JWT_SECRET="a" * 64,
         SESSION_SECRET="b" * 64,
-        MFA_ENCRYPTION_KEY=Fernet.generate_key().decode(),
+        SMTP_HOST="smtp.uepa.br",
         TURNSTILE_SECRET_KEY="segredo",
         CORS_ORIGINS=["https://sigra.uepa.br"],
     ).validate_for_production()
@@ -349,7 +460,8 @@ def _hardened(**overrides):
         PROFESSOR_DEFAULT_PASSWORD="",
         JWT_SECRET="a" * 64,
         SESSION_SECRET="b" * 64,
-        MFA_ENCRYPTION_KEY=Fernet.generate_key().decode(),
+        SMTP_HOST="smtp.uepa.br",
+        MFA_REQUIRED_ROLES=[3, 4],
         TURNSTILE_SECRET_KEY="segredo",
         CORS_ORIGINS=["https://sigra.uepa.br"],
     )
@@ -466,3 +578,10 @@ def test_user_cannot_change_own_email_or_username(client, db_session, field, val
     headers = {"Authorization": f"Bearer {create_access_token(user.email, user.id, 1)}"}
     resp = client.patch(f"/users/{user.id}", json={field: value}, headers=headers)
     assert resp.status_code == 403
+
+
+def test_production_requires_smtp_with_tls():
+    with pytest.raises(RuntimeError, match="SMTP_HOST"):
+        _hardened(SMTP_HOST="").validate_for_production()
+    with pytest.raises(RuntimeError, match="SMTP_STARTTLS"):
+        _hardened(SMTP_STARTTLS=False, SMTP_SSL=False).validate_for_production()

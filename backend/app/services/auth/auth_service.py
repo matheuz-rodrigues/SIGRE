@@ -64,12 +64,17 @@ class AuthService:
         return user
 
     def login(self, db: Session, login_data: Any, ip: Optional[str] = None) -> dict:
-        """Primeira etapa do login. Perfis com MFA recebem um desafio em vez da sessão."""
+        """Primeira etapa do login. Perfis com MFA recebem um código por e-mail em vez da sessão."""
         user = self.authenticate(db, login_data.username, login_data.senha, ip)
 
         if mfa.mfa_required_for(user):
-            challenge = "mfa_required" if mfa.is_enabled(db, user.id) else "mfa_setup_required"
-            return {challenge: True, "mfa_token": create_mfa_token(user.id)}
+            mfa.issue_code(db, user, ip)
+            return {
+                "mfa_required": True,
+                "mfa_method": "email",
+                "email_hint": mfa.mask_email(user.email),
+                "mfa_token": create_mfa_token(user.id),
+            }
 
         return self.issue_session(db, user)
 

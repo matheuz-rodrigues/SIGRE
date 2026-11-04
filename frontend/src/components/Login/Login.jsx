@@ -10,7 +10,7 @@ import MfaForm from './MfaForm'
 // ── Services ──────────────────────────────────────────────────────────────────
 import {
     login, register, saveSession, fetchCurrentUser, applyUserProfile,
-    verifyMfaCode, startMfaSetup, MFA_REQUIRED_FIELD, MFA_SETUP_REQUIRED_FIELD, MFA_TOKEN_FIELD,
+    verifyMfaCode, resendMfaCode, MFA_REQUIRED_FIELD, MFA_TOKEN_FIELD, MFA_EMAIL_HINT_FIELD,
 } from '../../services/AuthService'
 import { getCourses } from '../../services/CourseService'
 
@@ -45,7 +45,7 @@ const Login = ({ onLoginSuccess }) => {
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
     const [retryAfter, setRetryAfter] = useState(0) // segundos restantes de bloqueio por rate limit; 0 = sem bloqueio
-    const [mfaChallenge, setMfaChallenge] = useState(null) // { mfaToken, setup? } quando o backend exige 2º fator; null = tela normal
+    const [mfaChallenge, setMfaChallenge] = useState(null) // { mfaToken, emailHint } quando o backend exige 2º fator; null = tela normal
     const [activeRole, setActiveRole] = useState('aluno') // tipo de conta no cadastro
     const [mode, setMode] = useState('login') // 'login' | 'register'
     const [success, setSuccess] = useState('')
@@ -110,6 +110,8 @@ const Login = ({ onLoginSuccess }) => {
         await completeLogin(userData)
     }
 
+    const handleMfaResend = () => resendMfaCode(mfaChallenge.mfaToken)
+
     const handleMfaBack = () => {
         setMfaChallenge(null)
         setError('')
@@ -124,17 +126,12 @@ const Login = ({ onLoginSuccess }) => {
         try {
             const userData = await login(formData.username, formData.password)
 
-            // Backend sinaliza que falta o segundo fator — mostra o campo de código
+            // Segundo fator: o backend enviou um código para o e-mail da conta
             if (userData[MFA_REQUIRED_FIELD]) {
-                setMfaChallenge({ mfaToken: userData[MFA_TOKEN_FIELD] })
-                return
-            }
-
-            // Primeiro acesso de admin/técnico: cadastrar o app autenticador
-            if (userData[MFA_SETUP_REQUIRED_FIELD]) {
-                const mfaToken = userData[MFA_TOKEN_FIELD]
-                const setup = await startMfaSetup(mfaToken)
-                setMfaChallenge({ mfaToken, setup })
+                setMfaChallenge({
+                    mfaToken: userData[MFA_TOKEN_FIELD],
+                    emailHint: userData[MFA_EMAIL_HINT_FIELD],
+                })
                 return
             }
 
@@ -380,8 +377,9 @@ const Login = ({ onLoginSuccess }) => {
                     {/* ── FORM MFA (segundo fator) ── */}
                     {mode === 'login' && !success && mfaChallenge && (
                         <MfaForm
-                            setup={mfaChallenge.setup}
+                            emailHint={mfaChallenge.emailHint}
                             onVerify={handleMfaVerify}
+                            onResend={handleMfaResend}
                             onBack={handleMfaBack}
                             accentColor={accentColor} />
                     )}

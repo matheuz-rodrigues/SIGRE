@@ -25,8 +25,8 @@ class Settings(BaseSettings):
 	JWT_AUDIENCE: str = "sigra-web"
 	JWT_ACCESS_EXPIRES_MINUTES: int = 15
 	JWT_REFRESH_EXPIRES_DAYS: int = 7
-	# Token de desafio entre a senha e o código MFA
-	JWT_MFA_EXPIRES_MINUTES: int = 5
+	# Token de desafio entre a senha e o código MFA (cobre a validade do código enviado por e-mail)
+	JWT_MFA_EXPIRES_MINUTES: int = 10
 
 	# Segredo do cookie de sessão usado apenas no fluxo OAuth do Google.
 	# Deve ser diferente de JWT_SECRET.
@@ -68,12 +68,26 @@ class Settings(BaseSettings):
 	LOGIN_MAX_FAILURES_PER_IP: int = 20
 	REGISTER_MAX_PER_IP_PER_HOUR: int = 5
 
-	# MFA (TOTP). Papéis obrigados a usar MFA: 3=admin, 4=tecnico_adm.
+	# MFA por código enviado ao e-mail da conta. Papéis obrigados: 3=admin, 4=tecnico_adm.
 	MFA_REQUIRED_ROLES: list[int] = [3, 4]
-	MFA_ISSUER_NAME: str = "SIGRA UEPA"
-	# Chave Fernet (base64, 32 bytes) para cifrar os segredos TOTP no banco.
-	# Gerar com: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-	MFA_ENCRYPTION_KEY: str = ""
+	MFA_CODE_TTL_MINUTES: int = 10
+	# Tentativas erradas aceitas por código antes de invalidá-lo
+	MFA_CODE_MAX_ATTEMPTS: int = 5
+	# Intervalo mínimo entre dois envios e máximo de envios por usuário na janela de LOGIN_FAILURE_WINDOW_MINUTES
+	MFA_RESEND_COOLDOWN_SECONDS: int = 60
+	MFA_MAX_SENDS_PER_WINDOW: int = 5
+
+	# SMTP para o envio do código. Obrigatório em produção (com TLS).
+	# Fora de produção e sem SMTP_HOST, o código é escrito no log da API.
+	SMTP_HOST: str = ""
+	SMTP_PORT: int = 587
+	SMTP_USER: str = ""
+	SMTP_PASSWORD: str = ""
+	SMTP_FROM: str = "SIGRA UEPA <nao-responda@uepa.br>"
+	# STARTTLS na porta 587 ou TLS direto (SMTP_SSL) na 465
+	SMTP_STARTTLS: bool = True
+	SMTP_SSL: bool = False
+	SMTP_TIMEOUT_SECONDS: int = 10
 
 	GOOGLE_CLIENT_ID: str = ""
 	GOOGLE_CLIENT_SECRET: str = ""
@@ -108,8 +122,10 @@ class Settings(BaseSettings):
 			errors.append("SESSION_SECRET deve ser diferente de JWT_SECRET")
 		if self.JWT_ALGORITHM != "HS256":
 			errors.append("JWT_ALGORITHM deve ser HS256")
-		if self.MFA_REQUIRED_ROLES and not self.MFA_ENCRYPTION_KEY:
-			errors.append("MFA_ENCRYPTION_KEY é obrigatória quando há papéis com MFA obrigatório")
+		if self.MFA_REQUIRED_ROLES and not self.SMTP_HOST:
+			errors.append("SMTP_HOST é obrigatório para enviar o código de MFA por e-mail")
+		if self.SMTP_HOST and not (self.SMTP_STARTTLS or self.SMTP_SSL):
+			errors.append("O envio de e-mail deve usar SMTP_STARTTLS ou SMTP_SSL em produção")
 		if self.PUBLIC_REGISTRATION_ENABLED and not self.TURNSTILE_SECRET_KEY:
 			errors.append("TURNSTILE_SECRET_KEY é obrigatória com o cadastro público habilitado")
 		if any(o.startswith("http://") for o in self.allowed_origins):

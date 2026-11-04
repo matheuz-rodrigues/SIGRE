@@ -3,14 +3,14 @@ import { setUser } from './sessionStore'
 
 const ROLE_BY_TIPO = { 1: 'aluno', 2: 'professor', 3: 'admin', 4: 'tecnico_adm' }
 
-// ── MFA (TOTP, app autenticador) ─────────────────────────────────────────────
-// /auth/login devolve { mfa_required, mfa_token } ou, no primeiro acesso de
-// admin/técnico, { mfa_setup_required, mfa_token }.
+// ── MFA (código enviado ao e-mail da conta) ──────────────────────────────────
+// Para perfis com MFA, /auth/login envia o código e devolve
+// { mfa_required, mfa_method: 'email', email_hint, mfa_token }.
 export const MFA_VERIFY_ENDPOINT = '/auth/mfa/verify'
-export const MFA_SETUP_ENDPOINT = '/auth/mfa/setup'
+export const MFA_RESEND_ENDPOINT = '/auth/mfa/resend'
 export const MFA_REQUIRED_FIELD = 'mfa_required'
-export const MFA_SETUP_REQUIRED_FIELD = 'mfa_setup_required'
 export const MFA_TOKEN_FIELD = 'mfa_token'
+export const MFA_EMAIL_HINT_FIELD = 'email_hint'
 
 /**
  * Perfil do usuário autenticado — GET /users/me
@@ -59,12 +59,12 @@ export const verifyMfaCode = async (mfaToken, code) => {
 }
 
 /**
- * Cadastro do MFA no primeiro acesso — POST {MFA_SETUP_ENDPOINT}
+ * Reenvio do código por e-mail — POST {MFA_RESEND_ENDPOINT}
  * Envia: { mfa_token }
- * Recebe: { otpauth_uri, qr_code (data:image/svg+xml), secret }
+ * Recebe: { message, email_hint } ou 429 com Retry-After (intervalo mínimo entre envios)
  */
-export const startMfaSetup = async (mfaToken) => {
-  const res = await api.post(MFA_SETUP_ENDPOINT, { [MFA_TOKEN_FIELD]: mfaToken })
+export const resendMfaCode = async (mfaToken) => {
+  const res = await api.post(MFA_RESEND_ENDPOINT, { [MFA_TOKEN_FIELD]: mfaToken })
   return res.data
 }
 

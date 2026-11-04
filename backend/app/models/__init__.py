@@ -10,7 +10,7 @@ from .period import Periodo
 from .solicitation import Solicitacao
 from .refresh_token import RefreshToken
 from .auth_event import AuthEvent
-from .user_mfa import UserMfa
+from .mfa_code import MfaCode
 
 __all__ = [
     "Usuario",
@@ -25,5 +25,5 @@ __all__ = [
     "Solicitacao",
     "RefreshToken",
     "AuthEvent",
-    "UserMfa",
+    "MfaCode",
 ]

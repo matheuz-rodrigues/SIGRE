@@ -133,16 +133,17 @@ def _user_from_mfa_token(db: Session, token: str) -> Usuario:
     return user
 
 
-@router.post("/mfa/setup")
-def mfa_setup(payload: MfaTokenRequest, db: Session = Depends(get_db)):
-    """Primeiro acesso de perfil com MFA obrigatório: gera o segredo TOTP e o QR code."""
+@router.post("/mfa/resend")
+def mfa_resend(payload: MfaTokenRequest, request: Request, db: Session = Depends(get_db)):
+    """Envia um novo código para o e-mail da conta (respeita o intervalo mínimo entre envios)."""
     user = _user_from_mfa_token(db, payload.mfa_token)
-    return mfa.start_setup(db, user)
+    mfa.issue_code(db, user, rate_limit.client_ip(request), force=True)
+    return {"message": "Código reenviado", "email_hint": mfa.mask_email(user.email)}
 
 
 @router.post("/mfa/verify")
 def mfa_verify(payload: MfaVerifyRequest, request: Request, response: Response, db: Session = Depends(get_db)):
-    """Confere o código do app autenticador e conclui o login."""
+    """Confere o código enviado por e-mail e conclui o login."""
     user = _user_from_mfa_token(db, payload.mfa_token)
     ip = rate_limit.client_ip(request)
     identifier = f"uid:{user.id}"
