@@ -6,14 +6,15 @@ Responsabilidades:
 - Expandir instâncias de eventos recorrentes dentro de um intervalo de datas.
 """
 
+import re
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from dateutil.rrule import rrulestr
 
 from app.models import Alocacao
 from app.models.room import Sala
 from app.models.user import Usuario
-from app.services.infra.datetime_utils import APP_TIMEZONE_NAME, from_storage_datetime, ensure_app_timezone
+from app.services.infra.datetime_utils import APP_TIMEZONE, APP_TIMEZONE_NAME, from_storage_datetime, ensure_app_timezone
 
 PLATFORM_EVENT_SOURCE = "alocacoes"
 
@@ -171,6 +172,20 @@ def build_local_event(
     return event_dict
 
 
+_UNTIL_UTC = re.compile(r"UNTIL=(\d{8}T\d{6})Z")
+
+
+def _until_as_local_naive(rule: str) -> str:
+    """UNTIL em UTC (formato gerado pelo front e pelo Google) -> horário local sem fuso.
+
+    A expansão usa dtstart sem fuso, e o dateutil recusa misturar dtstart sem fuso com UNTIL em UTC.
+    """
+    def convert(match: re.Match) -> str:
+        utc = datetime.strptime(match.group(1), "%Y%m%dT%H%M%S").replace(tzinfo=timezone.utc)
+        return "UNTIL=" + utc.astimezone(APP_TIMEZONE).strftime("%Y%m%dT%H%M%S")
+    return _UNTIL_UTC.sub(convert, rule)
+
+
 def expand_local_reservation(
     reservation: Alocacao,
     range_start: datetime,
@@ -194,7 +209,7 @@ def expand_local_reservation(
     start_dt_naive = start_dt.replace(tzinfo=None)
     
     try:
-        recurrence = rrulestr(reservation.recurrency, dtstart=start_dt_naive)
+        recurrence = rrulestr(_until_as_local_naive(reservation.recurrency), dtstart=start_dt_naive)
     except Exception as exc:
         print(f"Erro ao expandir recorrência local {reservation.id}: {exc}")
         if end_dt < range_start_app or start_dt > range_end_app:
