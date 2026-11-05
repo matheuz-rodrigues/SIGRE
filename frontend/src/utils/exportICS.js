@@ -66,7 +66,8 @@ function escapeICS(str = '') {
         .replace(/\\/g, '\\\\')
         .replace(/;/g, '\\;')
         .replace(/,/g, '\\,')
-        .replace(/\n/g, '\\n')
+        // \r\n, \r ou \n viram "\n" literal: uma quebra de linha real permitiria injetar propriedades no .ics
+        .replace(/\r\n|\r|\n/g, '\\n')
 }
 
 /**

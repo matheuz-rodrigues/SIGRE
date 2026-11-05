@@ -193,6 +193,21 @@ GROUP BY ip ORDER BY 2 DESC;
 - Cabeçalhos: `curl -sI https://<HOST_DO_FRONT>/` e `curl -sI https://<HOST_DA_API>/health`.
 - CSP: com `CSP_HEADER_NAME=Content-Security-Policy-Report-Only`, navegar pelo sistema e conferir o console do navegador. Sem violações, trocar para `Content-Security-Policy`.
 
+## Teste de XSS (04/11/2026)
+
+Payloads (`<h1>…</h1><img src=x onerror=…>`, `<script>`, `{{7*7}}`, `javascript:`, `=HYPERLINK(…)`) foram
+gravados em todos os campos de texto (salas, tipos, cursos, períodos, disciplinas, professores, usuários,
+perfil, solicitações, motivo de recusa, cadastro público e reservas) e 17 telas de admin e aluno foram abertas
+no Chromium headless. Nenhum payload executou nem virou HTML: o React escapa todo o texto e o front não usa
+`dangerouslySetInnerHTML`, `innerHTML` nem `eval`. O back-end guarda o texto como recebido (a defesa é na saída).
+
+Ajustes feitos a partir do teste:
+- A cor do curso vai direto para `style`; o back-end aceitava `url(https://…)` (rastreamento/requisição
+  externa). Agora só aceita `#RRGGBB`.
+- A exportação `.ics` não tratava `\r`; uma quebra de linha em nome de sala ou disciplina injetava
+  propriedades no arquivo. Agora toda quebra vira `\n` literal.
+- Exportação `.xlsx` (SheetJS) grava valores começando com `=`/`+` como texto, não como fórmula: sem injeção de fórmula.
+
 ## Decisões registradas
 
 - `tecnico_adm` (4) passa nas checagens `require_role(ROLE_ADMIN)` por nível mínimo e aprova/recusa reservas e solicitações. **Comportamento intencional**, confirmado pelo time; por isso o técnico também tem MFA obrigatório.
