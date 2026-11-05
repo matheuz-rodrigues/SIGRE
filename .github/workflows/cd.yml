@@ -56,6 +56,16 @@ jobs:
              | del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.placementConstraints,.compatibilities,.registeredAt,.registeredBy)' \
           > /tmp/task-def.json
 
+          # A API não sobe em produção sem estas variáveis (Settings.validate_for_production):
+          # falha aqui com uma mensagem clara em vez de o container entrar em loop de reinício
+          MISSING=$(jq -r --argjson req '["JWT_SECRET","SESSION_SECRET","CORS_ORIGINS","SMTP_HOST"]' \
+            '[.containerDefinitions[0] | ((.environment // [])[].name), ((.secrets // [])[].name)] as $have
+             | $req - $have | join(" ")' /tmp/task-def.json)
+          if [ -n "$MISSING" ]; then
+            echo "::error::Task definition sigra-prod-backend sem as variáveis: $MISSING (veja docs/SEGURANCA.md)"
+            exit 1
+          fi
+
           NEW_ARN=$(aws ecs register-task-definition \
             --cli-input-json file:///tmp/task-def.json \
             --query 'taskDefinition.taskDefinitionArn' \

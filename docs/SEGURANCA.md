@@ -83,6 +83,33 @@ MFA por e-mail:
 - A segurança do segundo fator passa a depender da conta de e-mail institucional: perfis administrativos devem
   ter senha forte (e, se o provedor permitir, MFA) no e-mail.
 
+## Servidor de e-mail (código de MFA)
+
+A configuração é só por variáveis de ambiente (`SMTP_*`); trocar de provedor não exige mudar código.
+Para validar um servidor sem depender do login: `python scripts/test_smtp.py destino@exemplo.com`
+(no container: `docker exec -it sigra_backend python3 scripts/test_smtp.py destino@exemplo.com`).
+
+**Teste temporário na AWS (Amazon SES, `us-east-1`)**
+
+1. No SES, verifique a identidade do remetente. Enquanto a conta estiver em *sandbox*, verifique também cada
+   destinatário (ou peça a saída do sandbox).
+2. Em *SMTP settings*, gere as credenciais SMTP (são diferentes das chaves de acesso da AWS).
+3. Na task definition `sigra-prod-backend`: `SMTP_HOST=email-smtp.us-east-1.amazonaws.com`, `SMTP_PORT=587`,
+   `SMTP_STARTTLS=true`, `SMTP_FROM` com o remetente verificado; `SMTP_USER` e `SMTP_PASSWORD` como `secrets`
+   (Secrets Manager/SSM), não em `environment`.
+4. Não use remetente `@uepa.br` pelo SES: sem SPF/DKIM do domínio autorizando o SES, o e-mail cai no spam ou é
+   recusado (principalmente pelo `@aluno.uepa.br`).
+5. O `cd.yml` interrompe o deploy se a task definition não tiver `JWT_SECRET`, `SESSION_SECRET`, `CORS_ORIGINS`
+   ou `SMTP_HOST`.
+
+**Implantação na DSPD**
+
+- Trocar `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` e `SMTP_FROM` pelos dados do servidor da UEPA,
+  com remetente `nao-responda@uepa.br` (ou outro definido pela DSPD) autorizado no SPF/DKIM do domínio.
+- Relay interno liberado por IP: deixar `SMTP_USER`/`SMTP_PASSWORD` vazios.
+- Em produção a API exige STARTTLS (587) ou SSL (465, `SMTP_SSL=true`). Confirmar com a DSPD que o relay
+  oferece TLS; se não oferecer, a API não sobe e o ponto precisa ser tratado com eles.
+
 ## Variáveis de ambiente novas
 
 | Variável | Obrigatória em produção | Descrição |
