@@ -208,11 +208,41 @@ Ajustes feitos a partir do teste:
   propriedades no arquivo. Agora toda quebra vira `\n` literal.
 - Exportação `.xlsx` (SheetJS) grava valores começando com `=`/`+` como texto, não como fórmula: sem injeção de fórmula.
 
+## Teste de autorização e IDOR (04/11/2026)
+
+Todas as rotas foram revisadas (papel exigido e checagem do dono do objeto) e atacadas com sete atores:
+anônimo, aluno A, aluno B, professor, técnico, admin e um segundo admin
+(`tests/functional/rbac/test_idor.py`, 108 casos, e teste ao vivo com contas reais).
+
+Falhas encontradas e corrigidas:
+- **`DELETE /reservations/{id}` sem checagem de dono**: qualquer usuário logado apagava qualquer reserva,
+  inclusive as aulas do semestre. Agora só o dono ou admin/técnico.
+- **Autoaprovação**: o dono comum aprovava a própria reserva com `PATCH {"status": "APPROVED"}`. O status
+  passa a ser ignorado para quem não é admin/técnico.
+- **Reserva em nome de outro**: `POST /reservations/` aceitava `fk_usuario` de outra pessoa. Para usuário comum,
+  o dono é sempre quem está logado (e o status, sempre pendente).
+- **Tipos de sala**: o técnico criava/editava/apagava tipos de sala (salas já eram só do admin). Agora só admin.
+- **E-mail dos professores** ia para qualquer usuário logado em `GET /professors/`; aluno e professor recebem
+  só o nome.
+
+Conferido e já correto: usuários só editam o próprio perfil (sem papel/status/e-mail/username), técnico não
+gerencia usuários, admin não edita nem exclui outro admin, `/solicitations/mine` só traz as do próprio e-mail,
+solicitações e relatórios exigem admin/técnico, eventos do Google usam só as credenciais do próprio usuário e
+todas as rotas protegidas devolvem 401 sem sessão.
+
+IDs sequenciais: com a checagem por objeto, adivinhar um ID só resulta em 403/404. Trocar as chaves por UUID
+seria defesa adicional (esconde volume e dificulta varredura), mas envolve todas as tabelas, chaves estrangeiras,
+o token e o front; ver "Pontos para o time decidir".
+
 ## Decisões registradas
 
 - `tecnico_adm` (4) passa nas checagens `require_role(ROLE_ADMIN)` por nível mínimo e aprova/recusa reservas e solicitações. **Comportamento intencional**, confirmado pelo time; por isso o técnico também tem MFA obrigatório.
 
 ## Pontos para o time decidir
+
+- IDs públicos em UUID (defesa em profundidade contra varredura de IDs), em vez dos inteiros sequenciais.
+- A exclusão de reserva aprovada apaga o evento usando a primeira credencial Google do banco
+  (`GoogleCredential.first()`), não a de quem criou o evento.
 
 - O cadastro público aceita o papel `tecnico_adm` (fica pendente). Como o técnico passa nas checagens de admin
   por nível mínimo, aprovar um cadastro desses por engano dá acesso quase administrativo. Avaliar se técnicos

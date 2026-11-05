@@ -6,7 +6,7 @@ from sqlalchemy import exc
 from app.try_database import get_db
 from app.models import TipoSala, Sala 
 from app.schemas.room_type import TipoSalaCreate, TipoSalaOut, TipoSalaUpdate
-from app.services.auth.rbac import require_role, ROLE_ADMIN, ROLE_USER
+from app.services.auth.rbac import require_role, require_role_exact, ROLE_ADMIN, ROLE_USER
 
 router = APIRouter(prefix="/room-types", tags=["Room Types"])
 
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/room-types", tags=["Room Types"])
 def create_room_type(
     payload: TipoSalaCreate, 
     db: Session = Depends(get_db), 
-    _admin=Depends(require_role(ROLE_ADMIN))
+    _admin=Depends(require_role_exact(ROLE_ADMIN))
 ):
     """
     Cria um novo tipo de sala (ex: Laboratório, Auditório).
@@ -69,7 +69,7 @@ def update_room_type(
     type_id: int,
     payload: TipoSalaUpdate,
     db: Session = Depends(get_db),
-    _admin=Depends(require_role(ROLE_ADMIN))
+    _admin=Depends(require_role_exact(ROLE_ADMIN))
 ):
     """
     Atualiza o nome de um tipo de sala.
@@ -97,7 +97,7 @@ def update_room_type(
 def delete_room_type(
     type_id: int,
     db: Session = Depends(get_db),
-    _admin=Depends(require_role(ROLE_ADMIN))
+    _admin=Depends(require_role_exact(ROLE_ADMIN))
 ):
     """
     Exclui um tipo de sala.
