@@ -6,9 +6,8 @@ if [ ! -d "alembic" ]; then
 fi
 python3 ./scripts/create_tables.py
 alembic stamp head
-if [ -f "./scripts/seed.py" ]; then
-    python3 ./scripts/seed.py
-fi
+# O admin inicial é criado no startup da API (main.py:_seed_admin), que valida a força da senha
+# e aceita ADMIN_SEED_PASSWORD vazia; scripts/seed.py fica só para uso manual
 RELOAD_FLAG=""
 if [ "$ENV" = "development" ]; then
     RELOAD_FLAG="--reload"
