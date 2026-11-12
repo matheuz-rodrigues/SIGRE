@@ -153,8 +153,9 @@ Execute em cada ambiente compartilhado ou de produção que já tenha usado valo
 Na primeira implantação desta versão (o `init.sh` usa `create_all` + `alembic stamp`, então rode manualmente):
 
 ```sql
--- Refresh tokens antigos estavam em texto puro e não são mais aceitos (todos fazem login de novo)
-DELETE FROM refresh_tokens WHERE revoked_at IS NULL OR expires_at < now();
+-- Refresh tokens antigos estavam em texto puro e não são mais aceitos (todos fazem login de novo).
+-- A tabela é recriada com colunas de data com fuso no próximo start da API (create_all): reinicie a API depois
+DROP TABLE refresh_tokens;
 -- O client secret do Google não fica mais no banco
 UPDATE google_credentials SET client_id = NULL, client_secret = NULL;
 -- MFA por app autenticador substituído pelo código por e-mail (a tabela mfa_codes é criada no startup)
