@@ -1,5 +1,10 @@
 import pytest
 import os
+
+# Os testes existentes autenticam admins direto pelo token; MFA e limites têm testes próprios
+os.environ.setdefault("MFA_REQUIRED_ROLES", "[]")
+os.environ.setdefault("REGISTER_MAX_PER_IP_PER_HOUR", "1000")
+os.environ.setdefault("LOGIN_MAX_FAILURES_PER_IP", "1000")
 from unittest.mock import patch, MagicMock
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy import create_engine
@@ -53,7 +58,8 @@ def client(db_session):
     app.dependency_overrides[get_db] = override_get_db
     
     # Return fastapi TestClient
-    with TestClient(app) as c:
+    # https: os cookies de sessão têm a flag Secure e não seriam reenviados em http
+    with TestClient(app, base_url="https://testserver") as c:
         yield c
         
 from app.services.auth.security import create_access_token
@@ -83,6 +89,33 @@ def admin_token_headers(test_admin_user):
         subject=test_admin_user.email, 
         user_id=test_admin_user.id, 
         role=test_admin_user.tipo_usuario
+    )
+    return {"Authorization": f"Bearer {access_token}"}
+
+@pytest.fixture
+def test_regular_user(db_session):
+    from app.models.user import Usuario
+    user = db_session.query(Usuario).filter(Usuario.email == "aluno@test.com").first()
+    if not user:
+        user = Usuario(
+            email="aluno@test.com",
+            username="aluno_test",
+            senha="hashed_password",
+            tipo_usuario=1, # aluno
+            status="aprovado",
+            nome="Aluno Test"
+        )
+        db_session.add(user)
+        db_session.commit()
+        db_session.refresh(user)
+    return user
+
+@pytest.fixture
+def user_token_headers(test_regular_user):
+    access_token = create_access_token(
+        subject=test_regular_user.email,
+        user_id=test_regular_user.id,
+        role=test_regular_user.tipo_usuario
     )
     return {"Authorization": f"Bearer {access_token}"}
 

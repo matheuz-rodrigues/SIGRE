@@ -216,7 +216,9 @@ class AllocationService(BaseService[Alocacao]):
 
         from app.services.auth.rbac import ROLE_ADMIN
         if current_user.tipo_usuario < ROLE_ADMIN:
+            # Usuário comum só cria reserva pendente e em nome próprio
             payload.status = "PENDING"
+            payload.fk_usuario = current_user.id
         elif not payload.status:
             payload.status = "APPROVED"
 
@@ -427,6 +429,10 @@ class AllocationService(BaseService[Alocacao]):
         if not alocacao:
             return
 
+        from app.services.auth.rbac import ROLE_ADMIN
+        if int(current_user.tipo_usuario or 0) < ROLE_ADMIN and alocacao.fk_usuario != current_user.id:
+            raise HTTPException(status_code=403, detail="Sem permissão para excluir esta reserva")
+
         if not delete_series and len(parts) > 1 and alocacao.recurrency:
             date_str = parts[1]  # e.g. '2026-05-15T08:00:00' or '2026-05-15T08:00:00-03:00'
             
@@ -502,8 +508,10 @@ class AllocationService(BaseService[Alocacao]):
             raise HTTPException(status_code=403, detail="Sem permissão para editar esta reserva")
 
         update_data = payload.model_dump(exclude_unset=True)
-        if "fk_usuario" in update_data and not is_admin:
+        if not is_admin:
+            # Dono comum não troca o dono nem aprova a própria reserva
             update_data.pop("fk_usuario", None)
+            update_data.pop("status", None)
         if not update_data:
             raise HTTPException(status_code=400, detail="Nenhum dado para atualizar")
 

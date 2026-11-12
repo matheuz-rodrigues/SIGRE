@@ -167,3 +167,19 @@ def test_delete_reservation_unauthorized(client, db_session):
     res = db_session.query(Alocacao).first()
     response = client.delete(f"/reservations/{res.id}")
     assert response.status_code == 401
+
+
+def test_weekly_reservation_with_utc_until_expands_all_occurrences():
+    """RRULE com UNTIL em UTC (formato do front) deve gerar todas as semanas, não só a primeira."""
+    from app.builders.reservation_builder import expand_local_reservation
+    from app.models.allocation import Alocacao
+
+    aula = Alocacao(
+        id=999, fk_usuario=1, fk_sala=1, tipo="AULA", status="APPROVED", uso="Aula semanal",
+        dia_horario_inicio=datetime(2026, 8, 3, 8, 0), dia_horario_saida=datetime(2026, 8, 3, 10, 0),
+        recurrency="RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20260901T025959Z",
+    )
+    events = expand_local_reservation(aula, datetime(2026, 8, 1), datetime(2026, 9, 30))
+    starts = [e["start"]["dateTime"][:16] for e in events]
+    # Segundas de 03/08 a 31/08 (UNTIL 31/08 23:59:59 em Belém)
+    assert starts == [f"2026-08-{d:02d}T08:00" for d in (3, 10, 17, 24, 31)]

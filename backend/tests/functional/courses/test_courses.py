@@ -75,3 +75,23 @@ def test_delete_course_unauthorized(client, db_session):
 def test_delete_non_existent_course(client, admin_token_headers):
     response = client.delete("/courses/99999", headers=admin_token_headers)
     assert response.status_code == 404
+
+
+@pytest.mark.parametrize("cor", [
+    "url(https://exemplo.com/rastreio.png)",
+    "red;position:fixed",
+    "#12345",
+    "expression(alert(1))",
+])
+def test_course_color_must_be_hex(client, admin_token_headers, cor):
+    payload = {"nomeCurso": "Curso Cor Inválida", "siglaCurso": "CCI", "corCurso": cor}
+    assert client.post("/courses/", json=payload, headers=admin_token_headers).status_code == 422
+
+
+def test_course_color_hex_is_accepted(client, admin_token_headers):
+    payload = {"nomeCurso": "Curso Cor Válida", "siglaCurso": "CCV", "corCurso": "#1C1AA3"}
+    response = client.post("/courses/", json=payload, headers=admin_token_headers)
+    assert response.status_code in (200, 201)
+    course_id = response.json()["idCurso"]
+    bad = client.put(f"/courses/{course_id}", json={"corCurso": "url(https://exemplo.com/x.png)"}, headers=admin_token_headers)
+    assert bad.status_code == 422

@@ -1,7 +1,9 @@
+import { toast } from 'sonner'
 import React, { useState, useEffect, useMemo } from 'react';
 import { Users, GraduationCap, BookOpen, XCircle, UserPlus, Loader2, Check, X, Pencil } from 'lucide-react';
 import api from '../../services/api';
 import { getCourses } from '../../services/CourseService';
+import { getUser } from '../../services/sessionStore';
 
 const TERMOS_PROIBIDOS = ['senha', 'password', '12345', 'qwerty', 'admin', 'teste', 'sigra', 'uepa', 'aluno', 'prof']
 
@@ -75,7 +77,7 @@ const PAPEL_STYLES = {
 };
 
 const UsuarioCard = ({ u, onAprovar, onRecusar, onDeletar, onVisualizar, showAprovar, showDesativar, showReativar }) => {
-  const currentUserId = Number(localStorage.getItem('userId'));
+  const currentUserId = getUser()?.id;
   const isCurrentUser = u.id === currentUserId;
   const isAdmin = u.papel === 'admin';
   const PapelIcon = u.papel === 'professor' ? BookOpen
@@ -162,28 +164,28 @@ export default function UserManagement({ usuarios, onAprovar, onRecusar, onDelet
     e.preventDefault()
     const { nome, email, username, senha, papel, cursoId } = formNovo
     if (!nome?.trim() || !email?.trim() || !senha?.trim()) {
-      alert('Preencha nome, e-mail e senha.')
+      toast.warning('Preencha nome, e-mail e senha.')
       return
     }
 
     const emailTrimmed = email.trim().toLowerCase()
     if ((papel === 'professor' || papel === 'tecnico_adm') && !emailTrimmed.endsWith('@uepa.br')) {
-      alert('E-mail de professor/técnico deve terminar com @uepa.br')
+      toast.warning('E-mail de professor/técnico deve terminar com @uepa.br')
       return
     }
     if (papel === 'aluno' && !emailTrimmed.endsWith('@aluno.uepa.br')) {
-      alert('E-mail de aluno deve terminar com @aluno.uepa.br')
+      toast.warning('E-mail de aluno deve terminar com @aluno.uepa.br')
       return
     }
 
     const pwChecks = checkPassword(senha)
     if (!Object.values(pwChecks).every(Boolean)) {
-      alert('A senha não atende todos os requisitos de segurança.')
+      toast.warning('A senha não atende todos os requisitos de segurança.')
       return
     }
 
     if (papel === 'aluno' && !cursoId) {
-      alert('Selecione o curso do aluno.')
+      toast.warning('Selecione o curso do aluno.')
       return
     }
     setCriando(true)
@@ -202,10 +204,10 @@ export default function UserManagement({ usuarios, onAprovar, onRecusar, onDelet
       await api.post('/users/', payload)
       setFormNovo({ nome: '', email: '', username: '', senha: '', papel: 'aluno', cursoId: '' })
       if (onUsuarioCriado) onUsuarioCriado()
-      alert('Usuário criado. Ele aparecerá na lista conforme o status definido pelo servidor.')
+      toast.success('Usuário criado. Ele aparecerá na lista conforme o status definido pelo servidor.')
     } catch (err) {
       const d = err.response?.data?.detail
-      alert(typeof d === 'string' ? d : 'Não foi possível criar o usuário.')
+      toast.error(typeof d === 'string' ? d : 'Não foi possível criar o usuário.')
     } finally {
       setCriando(false)
     }
@@ -241,12 +243,12 @@ export default function UserManagement({ usuarios, onAprovar, onRecusar, onDelet
     e.preventDefault()
     if (!usuarioSelecionado?.id) return
     if (!formEdicao.nome.trim() || !formEdicao.email.trim()) {
-      alert('Nome e e-mail são obrigatórios.')
+      toast.warning('Nome e e-mail são obrigatórios.')
       return
     }
 
     if (formEdicao.senha.trim() && !formEdicao.senha_atual.trim()) {
-      alert('Informe a senha atual para redefinir a senha.')
+      toast.warning('Informe a senha atual para redefinir a senha.')
       return
     }
 
@@ -267,10 +269,10 @@ export default function UserManagement({ usuarios, onAprovar, onRecusar, onDelet
       await api.patch(`/users/${usuarioSelecionado.id}`, payload)
       if (onUsuarioCriado) onUsuarioCriado()
       fecharModalEdicao()
-      alert('Dados do usuário atualizados com sucesso.')
+      toast.success('Dados do usuário atualizados com sucesso.')
     } catch (err) {
       const detail = err?.response?.data?.detail
-      alert(typeof detail === 'string' ? detail : 'Não foi possível atualizar o usuário.')
+      toast.error(typeof detail === 'string' ? detail : 'Não foi possível atualizar o usuário.')
     } finally {
       setSalvandoEdicao(false)
     }

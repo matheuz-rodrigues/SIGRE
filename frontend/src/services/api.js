@@ -4,86 +4,77 @@ import { clearSession } from "./AuthService";
 const api = axios.create({
     baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
     headers: {'Content-Type': 'application/json'},
+    // Sessão em cookies HttpOnly definidos pelo back-end; o JS nunca lê o token
     withCredentials: true,
 })
 
+// Token CSRF (double-submit) só em memória: vem no corpo de login/refresh/MFA
+let csrfToken = null
+export const setCsrfToken = (token) => { csrfToken = token || null }
+
+const UNSAFE_METHODS = ['post', 'put', 'patch', 'delete']
+
 api.interceptors.request.use((config) => {
-    const token = localStorage.getItem('access_token')
-    if (token) {
-        config.headers.Authorization = `Bearer ${token}`
+    if (csrfToken && UNSAFE_METHODS.includes((config.method || '').toLowerCase())) {
+        config.headers['X-CSRF-Token'] = csrfToken
     }
     return config
 })
 
-let isRefreshing = false
-let failedQueue = []
-
-const processQueue = (error, token = null) => {
-    failedQueue.forEach(({ resolve, reject }) => {
-        if (error) {
-            reject(error)
-        } else {
-            resolve(token)
-        }
-    })
-    failedQueue = []
+/**
+ * Renova a sessão (cookie de refresh) e devolve o perfil do usuário.
+ * Usado no carregamento da página para recuperar o token CSRF.
+ */
+// Uma única renovação por vez: o refresh token é rotacionado, então chamadas
+// paralelas usariam um token já revogado
+let refreshPromise = null
+export const refreshSession = () => {
+    if (!refreshPromise) {
+        refreshPromise = axios
+            .post(`${api.defaults.baseURL}/auth/refresh`, {}, { withCredentials: true })
+            .then((response) => {
+                setCsrfToken(response.data.csrf_token)
+                return response.data
+            })
+            .finally(() => { refreshPromise = null })
+    }
+    return refreshPromise
 }
+
+// Rotas de autenticação tratam os próprios erros (ex.: código MFA inválido não é sessão expirada)
+const NO_REFRESH_PATHS = ['/auth/login', '/auth/refresh', '/auth/token', '/auth/mfa', '/auth/register', '/auth/logout']
+
+const isCsrfError = (error) =>
+    error.response?.status === 403 && /csrf/i.test(error.response?.data?.detail || '')
 
 api.interceptors.response.use(
     (response) => response,
     async (error) => {
         const originalRequest = error.config
 
-        if (error.response?.status !== 401) {
+        // 401 = access token expirado; 403 CSRF = token CSRF desatualizado (ex.: refresh em outra aba)
+        if (error.response?.status !== 401 && !isCsrfError(error)) {
             return Promise.reject(error)
         }
 
         const url = originalRequest.url || ''
-        if (url.includes('/auth/login') || url.includes('/auth/refresh') || url.includes('/auth/token')) {
+        if (NO_REFRESH_PATHS.some((path) => url.includes(path))) {
             return Promise.reject(error)
         }
 
         if (originalRequest._retry) {
             return Promise.reject(error)
         }
-
-        if (isRefreshing) {
-            return new Promise((resolve, reject) => {
-                failedQueue.push({ resolve, reject })
-            }).then((token) => {
-                originalRequest.headers.Authorization = `Bearer ${token}`
-                return api(originalRequest)
-            }).catch((err) => {
-                return Promise.reject(err)
-            })
-        }
-
         originalRequest._retry = true
-        isRefreshing = true
 
         try {
-            const response = await axios.post(
-                `${api.defaults.baseURL}/auth/refresh`,
-                {},
-                { withCredentials: true }
-            )
-
-            const { access_token } = response.data
-
-            localStorage.setItem('access_token', access_token)
-
-            processQueue(null, access_token)
-
-            originalRequest.headers.Authorization = `Bearer ${access_token}`
-            return api(originalRequest)
+            await refreshSession()
         } catch (refreshError) {
-            processQueue(refreshError, null)
             clearSession()
             window.dispatchEvent(new CustomEvent('session-expired'))
             return Promise.reject(refreshError)
-        } finally {
-            isRefreshing = false
         }
+        return api(originalRequest)
     }
 )
 

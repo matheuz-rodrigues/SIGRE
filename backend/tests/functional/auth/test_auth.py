@@ -6,7 +6,7 @@ def test_register_user(client, db_session):
     # Test valid registration
     payload = {
         "nome": "Test User",
-        "email": "testuser@example.com",
+        "email": "testuser@aluno.uepa.br",
         "username": "testuser1",
         "senha": "StrongP@ssw0rd!!",
         "tipo_usuario": 1 # aluno
@@ -20,14 +20,14 @@ def test_register_user(client, db_session):
     assert data["message"] == "Cadastro realizado com sucesso"
     
     # Verify in DB
-    user = db_session.query(Usuario).filter(Usuario.email == "testuser@example.com").first()
+    user = db_session.query(Usuario).filter(Usuario.email == "testuser@aluno.uepa.br").first()
     assert user is not None
     assert user.username == "testuser1"
 
 def test_register_duplicate_email(client, db_session):
     payload = {
         "nome": "Another Test",
-        "email": "testuser@example.com", # Duplicate
+        "email": "testuser@aluno.uepa.br", # Duplicate
         "username": "anothertest",
         "senha": "StrongP@ssw0rd!!",
         "tipo_usuario": 1
@@ -40,7 +40,7 @@ def test_register_duplicate_email(client, db_session):
 def test_register_duplicate_username(client, db_session):
     payload = {
         "nome": "Another Test",
-        "email": "different_email@example.com",
+        "email": "different_email@aluno.uepa.br",
         "username": "testuser1", # Duplicate
         "senha": "StrongP@ssw0rd!!",
         "tipo_usuario": 1
@@ -63,7 +63,7 @@ def test_login_success(client, db_session):
     # Ensure user exists before logging in
     payload = {
         "nome": "Login Test User",
-        "email": "logintest@example.com",
+        "email": "logintest@aluno.uepa.br",
         "username": "logintest1",
         "senha": "StrongP@ssw0rd!!",
         "tipo_usuario": 1 # aluno
@@ -71,21 +71,24 @@ def test_login_success(client, db_session):
     client.post("/auth/register", json=payload)
     
     # Approve the created user to allow login
-    user = db_session.query(Usuario).filter(Usuario.email == "logintest@example.com").first()
+    user = db_session.query(Usuario).filter(Usuario.email == "logintest@aluno.uepa.br").first()
     user.status = "aprovado"
     db_session.commit()
     
     login_data = {
-        "username": "logintest@example.com", 
+        "username": "logintest@aluno.uepa.br", 
         "senha": "StrongP@ssw0rd!!"
     }
     
     response = client.post("/auth/login", json=login_data)
     assert response.status_code == 200
     data = response.json()
-    assert "access_token" in data
+    # Token só em cookie HttpOnly; o corpo traz o token CSRF
+    assert "access_token" not in data
+    assert response.cookies.get("access_token")
+    assert data["csrf_token"] == response.cookies.get("csrf_token")
     assert data["token_type"] == "bearer"
-    assert data["email"] == "logintest@example.com"
+    assert data["email"] == "logintest@aluno.uepa.br"
     assert data["papel"] == "aluno"
 
 def test_login_success_by_email(client, db_session):
@@ -102,7 +105,7 @@ def test_login_invalid_credentials(client, db_session):
     # Ensure user exists
     payload = {
         "nome": "Invalid Login Test User",
-        "email": "invalidlogintest@example.com",
+        "email": "invalidlogintest@aluno.uepa.br",
         "username": "invalidlogintest1",
         "senha": "StrongP@ssw0rd!!",
         "tipo_usuario": 1
@@ -110,7 +113,7 @@ def test_login_invalid_credentials(client, db_session):
     client.post("/auth/register", json=payload)
 
     login_data = {
-        "username": "invalidlogintest@example.com",
+        "username": "invalidlogintest@aluno.uepa.br",
         "senha": "wrongpassword"
     }
     
@@ -151,7 +154,7 @@ def test_login_unapproved_user(client, db_session):
 def test_login_token_standard_endpoint(client, db_session):
     # Test OAuth2 /token endpoint
     form_data = {
-        "username": "logintest@example.com",
+        "username": "logintest@aluno.uepa.br",
         "password": "StrongP@ssw0rd!!"
     }
     response = client.post("/auth/token", data=form_data)

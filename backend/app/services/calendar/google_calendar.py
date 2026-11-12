@@ -25,8 +25,8 @@ def _get_credentials(db: Session, user_id: int) -> Optional[Credentials]:
 		token=creds_row.access_token,
 		refresh_token=creds_row.refresh_token,
 		token_uri=settings.GOOGLE_TOKEN_URI,
-		client_id=creds_row.client_id or settings.GOOGLE_CLIENT_ID,
-		client_secret=creds_row.client_secret or settings.GOOGLE_CLIENT_SECRET,
+		client_id=settings.GOOGLE_CLIENT_ID,
+		client_secret=settings.GOOGLE_CLIENT_SECRET,
 		scopes=(creds_row.scopes or "").split(),
 		expiry=expiry,
 	)

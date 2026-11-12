@@ -1,0 +1,27 @@
+"""Cabeçalhos de segurança HTTP nas respostas da API."""
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+
+# A API só devolve JSON/redirecionamentos: nada deve ser executado nem enquadrado
+API_CSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+DOCS_PATHS = ("/docs", "/redoc")
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        headers = response.headers
+        headers.setdefault("X-Content-Type-Options", "nosniff")
+        headers.setdefault("X-Frame-Options", "DENY")
+        headers.setdefault("Referrer-Policy", "no-referrer")
+        headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+        headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        # A resposta varia com a origem (CORS): impede cache compartilhado de servir a versão de outra origem
+        if "origin" not in headers.get("vary", "").lower():
+            headers.add_vary_header("Origin")
+        # Swagger/ReDoc (só fora de produção) carregam scripts de CDN
+        if not request.url.path.startswith(DOCS_PATHS):
+            headers.setdefault("Content-Security-Policy", API_CSP)
+        # Sempre enviado; o navegador só o aplica em respostas HTTPS (ignorado em http://localhost)
+        headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        return response

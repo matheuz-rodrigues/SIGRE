@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import api from '../../services/api'
 import { fetchCurrentUser, applyUserProfile } from '../../services/AuthService'
+import { getUser, setUser } from '../../services/sessionStore'
 
 const cls = {
     input: `w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-800 text-sm
@@ -80,7 +81,7 @@ const ProfileModal = ({ userRole, onClose }) => {
                 nome,
                 telefone: form.telefone.trim() || null,
             })
-            localStorage.setItem('userName', nome)
+            setUser({ ...getUser(), nome })
             setPerfil(p => ({ ...p, nome, telefone: form.telefone.trim() }))
             setSuccess('Perfil atualizado com sucesso!')
         } catch (err) {
@@ -152,7 +153,7 @@ const ProfileModal = ({ userRole, onClose }) => {
         >
             <div
                 className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[92vh] overflow-hidden flex flex-col"
-                style={{ animation: 'fadeInUp 0.25s ease' }}
+                style={{ animation: 'fadeInUp20 0.25s ease' }}
             >
                 {/* Header */}
                 <div
@@ -377,8 +378,6 @@ const ProfileModal = ({ userRole, onClose }) => {
                     </div>
                 )}
             </div>
-
-            <style>{`@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}`}</style>
         </div>
     )
 }

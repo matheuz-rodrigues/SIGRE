@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -10,6 +11,8 @@ from app.config import Settings, get_settings
 from app.try_database import get_db
 from app.models import GoogleCredential
 from app.services.auth.rbac import get_current_user
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/google", tags=["google"])
 
@@ -65,10 +68,9 @@ def google_callback(
     """
     state_from_google = request.query_params.get("state")
     
-    state_from_session = request.session.get("oauth_state")
-    user_id_from_session = request.session.get("oauth_user_id")
-
-    print(f"DEBUG: Session in /callback - state_session: {state_from_session}, state_google: {state_from_google}, user_id: {user_id_from_session}")
+    # Uso único: o mesmo state não pode ser reaproveitado em outro callback
+    state_from_session = request.session.pop("oauth_state", None)
+    user_id_from_session = request.session.pop("oauth_user_id", None)
 
     if not state_from_session or not user_id_from_session:
         raise HTTPException(status_code=400, detail="Sessão inválida ou ID de usuário faltando")
@@ -94,8 +96,9 @@ def google_callback(
     authorization_response = str(request.url)
     try:
         flow.fetch_token(authorization_response=authorization_response)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Erro ao obter token do Google: {str(e)}")
+    except Exception:
+        logger.exception("Falha ao obter token do Google (user_id=%s)", user_id_from_session)
+        raise HTTPException(status_code=400, detail="Erro ao obter token do Google")
     
     creds = flow.credentials
     
@@ -109,8 +112,10 @@ def google_callback(
         row.refresh_token = creds.refresh_token
     row.expiry = creds.expiry
 
-    row.client_id = settings.GOOGLE_CLIENT_ID
-    row.client_secret = settings.GOOGLE_CLIENT_SECRET
+    # Client ID/secret vêm sempre do ambiente: o secret não é copiado para o banco
+    # e a rotação dele no Google Cloud não exige atualizar registros
+    row.client_id = None
+    row.client_secret = None
     row.scopes = " ".join(SCOPES)
     row.updated_at = datetime.now(tz=timezone.utc)
     

@@ -5,13 +5,23 @@ from app.try_database import get_db
 from app.schemas.solicitation import SolicitationCreate, SolicitationOut, SolicitationUpdateStatus
 from app.services.booking.solicitation_service import solicitation_service
 from app.services.auth.rbac import require_role, ROLE_USER, ROLE_ADMIN
+from app.services.auth.auth_service import REVERSE_ROLE_MAP
 from app.models import Usuario
 
 router = APIRouter(prefix="/solicitations", tags=["solicitations"])
 
 @router.post("/", response_model=SolicitationOut, status_code=status.HTTP_201_CREATED)
-def create(payload: SolicitationCreate, db: Session = Depends(get_db)):
-    """Cria uma nova solicitação de sala (público: formulário sem login)."""
+def create(
+    payload: SolicitationCreate,
+    db: Session = Depends(get_db),
+    current: Usuario = Depends(require_role(ROLE_USER)),
+):
+    """Cria uma nova solicitação de sala. O solicitante é sempre o usuário autenticado."""
+    payload = payload.model_copy(update={
+        "solicitante": current.nome,
+        "email": current.email,
+        "papel": REVERSE_ROLE_MAP.get(current.tipo_usuario, "aluno"),
+    })
     return solicitation_service.create_solicitation(db, payload)
 
 @router.get("/mine", response_model=List[SolicitationOut])

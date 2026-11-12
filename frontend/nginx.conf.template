@@ -1,0 +1,28 @@
+# Template processado pelo entrypoint do nginx:alpine (envsubst) ao iniciar o container.
+# Variáveis: API_ORIGIN (ex.: https://api.sigra.uepa.br) e CSP_HEADER_NAME
+# (Content-Security-Policy-Report-Only para teste; Content-Security-Policy para bloquear).
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+    server_tokens off;
+
+    # Content-Security-Policy:
+    # - script/frame: Cloudflare Turnstile (CAPTCHA do cadastro)
+    # - style 'unsafe-inline': sonner e Radix injetam <style> em tempo de execução
+    # - img data:/blob:: QR code do MFA e exportação de PDF/imagem
+    set $csp "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' ${API_ORIGIN}; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+
+    add_header ${CSP_HEADER_NAME} $csp always;
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    # Só tem efeito quando o acesso chega por HTTPS (TLS no proxy do Data Center)
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

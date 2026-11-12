@@ -15,7 +15,11 @@ router = APIRouter(prefix="/professors", tags=["professors"])
 
 @router.get("/", response_model=List[ProfessorOut], summary="Listar todos os professores")
 def list_professors(db: Session = Depends(get_db), _u=Depends(require_role(ROLE_USER))):
-    return professor_service.get_all(db)
+    professores = [ProfessorOut.model_validate(p) for p in professor_service.get_all(db)]
+    if int(_u.tipo_usuario or ROLE_USER) < ROLE_ADMIN:
+        # Aluno/professor só precisam do nome (filtros do calendário): sem e-mail
+        professores = [p.model_copy(update={"emailProf": None}) for p in professores]
+    return professores
 
 @router.post("/", response_model=ProfessorOut, status_code=status.HTTP_201_CREATED, summary="Criar novo professor")
 def create_professor(professor: ProfessorCreate, db: Session = Depends(get_db), _u=Depends(require_role_exact(ROLE_ADMIN))):

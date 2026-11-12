@@ -1,7 +1,9 @@
+import { toast } from 'sonner'
 import { useState, useEffect } from 'react'
 import { useSchedule } from '../Schedule/ScheduleContext'
 import api from '../../services/api'
 import { fetchCurrentUser, applyUserProfile } from '../../services/AuthService'
+import { getUser } from '../../services/sessionStore'
 import {
     X, Building2, Calendar, Clock, AlignLeft,
     Users, ChevronDown, CheckCircle2, Loader2, AlertCircle
@@ -71,9 +73,8 @@ const RoomRequestForm = ({ onClose, userRole, onSolicitacaoCriada }) => {
                     })
                 } catch {
                     if (cancelled) return
-                    const nome = localStorage.getItem('userName') || ''
-                    const email = localStorage.getItem('userEmail') || ''
-                    setLocked({ solicitante: nome, email })
+                    const user = getUser()
+                    setLocked({ solicitante: user?.nome || '', email: user?.email || '' })
                 } finally {
                     if (!cancelled) setLoadingProfile(false)
                 }
@@ -111,7 +112,7 @@ const RoomRequestForm = ({ onClose, userRole, onSolicitacaoCriada }) => {
     const handleSubmit = async (e) => {
         e.preventDefault()
         if (form.horarioInicio >= form.horarioFim) {
-            alert('O horário de término deve ser maior que o de início.')
+            toast.warning('O horário de término deve ser maior que o de início.')
             return
         }
         if (verificarConflito()) return
@@ -151,7 +152,7 @@ const RoomRequestForm = ({ onClose, userRole, onSolicitacaoCriada }) => {
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
                 style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}>
                 <div className="bg-white rounded-3xl shadow-2xl p-10 max-w-md w-full text-center"
-                    style={{ animation: 'fadeInUp 0.3s ease' }}>
+                    style={{ animation: 'fadeInUp20 0.3s ease' }}>
                     <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6"
                         style={{ background: 'linear-gradient(135deg, #1c1aa3, #7c3aed)' }}>
                         <CheckCircle2 size={40} className="text-white" />
@@ -175,7 +176,6 @@ const RoomRequestForm = ({ onClose, userRole, onSolicitacaoCriada }) => {
                         Fechar
                     </button>
                 </div >
-                <style>{`@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}`}</style>
             </div >
         )
     }
@@ -185,7 +185,7 @@ const RoomRequestForm = ({ onClose, userRole, onSolicitacaoCriada }) => {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
             style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}>
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[92vh] overflow-hidden flex flex-col"
-                style={{ animation: 'fadeInUp 0.25s ease' }}>
+                style={{ animation: 'fadeInUp20 0.25s ease' }}>
 
                 {/* Header */}
                 <div className="flex items-center justify-between px-8 py-5 border-b border-gray-100"
@@ -378,7 +378,6 @@ const RoomRequestForm = ({ onClose, userRole, onSolicitacaoCriada }) => {
                     </div>
                 </div >
             </div >
-            <style>{`@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}`}</style>
         </div >
     )
 }

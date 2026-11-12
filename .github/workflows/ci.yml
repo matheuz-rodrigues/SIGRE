@@ -14,7 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:15-alpine
+        # Espelho oficial no ECR Public: evita o limite de pulls anônimos do Docker Hub
+        image: public.ecr.aws/docker/library/postgres:15-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres

@@ -3,12 +3,18 @@ Roteador de Usuários — Padronizado RESTful.
 """
 
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from sqlalchemy.orm import Session
 from app.try_database import get_db
 from app.schemas.user import UserCreate, UserUpdate, UserOut
 from app.services.entities.user_service import user_service
-from app.services.auth.rbac import get_current_user, require_role, require_role_exact, ROLE_ADMIN, ROLE_USER
+from app.services.auth.rbac import get_current_user, require_role, require_role_exact, ROLE_ADMIN
+from app.services.auth.security import create_refresh_token, revoke_all_refresh_tokens
+from app.routers.auth import _set_refresh_cookie
+
+# Campos que só um administrador pode alterar: papel/status impedem autopromoção;
+# e-mail/username impedem burlar o domínio institucional e assumir solicitações de outro e-mail
+ADMIN_ONLY_FIELDS = {"tipo_usuario", "papel", "status", "email", "username"}
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -20,7 +26,7 @@ def get_me(current_user = Depends(get_current_user)):
 def list_users(
     tipo_usuario: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-    _u = Depends(require_role(ROLE_USER))
+    _admin = Depends(require_role(ROLE_ADMIN))
 ):
     return user_service.repository.list_active(db, tipo_usuario)
 
@@ -36,11 +42,15 @@ def create_user(
 def update_user(
     user_id: int,
     payload: UserUpdate,
+    response: Response,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
     if current_user.id != user_id and current_user.tipo_usuario != ROLE_ADMIN:
          raise HTTPException(status_code=403, detail="Sem permissão")
+
+    if current_user.tipo_usuario != ROLE_ADMIN and ADMIN_ONLY_FIELDS & payload.model_fields_set:
+        raise HTTPException(status_code=403, detail="Sem permissão para alterar papel ou status")
 
     if current_user.tipo_usuario == ROLE_ADMIN and current_user.id != user_id:
         target = user_service.get_by_id(db, user_id)
@@ -49,7 +59,16 @@ def update_user(
         if target.tipo_usuario == ROLE_ADMIN:
             raise HTTPException(status_code=403, detail="Administradores não podem editar outros administradores")
 
-    return user_service.update_user(db, user_id, payload)
+    user = user_service.update_user(db, user_id, payload)
+
+    if payload.senha:
+        # Troca de senha encerra as sessões abertas em outros dispositivos
+        revoke_all_refresh_tokens(db, user_id)
+        if current_user.id == user_id:
+            _set_refresh_cookie(response, create_refresh_token(db, user_id))
+    elif payload.status and payload.status != "aprovado":
+        revoke_all_refresh_tokens(db, user_id)
+    return user
 
 @router.patch("/approve/{user_id}", response_model=UserOut)
 def approve_user(
@@ -65,7 +84,9 @@ def refuse_user(
     db: Session = Depends(get_db),
     _admin = Depends(require_role_exact(ROLE_ADMIN))
 ):
-    return user_service.set_status(db, user_id, "recusado")
+    user = user_service.set_status(db, user_id, "recusado")
+    revoke_all_refresh_tokens(db, user_id)
+    return user
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(
@@ -81,4 +102,5 @@ def delete_user(
     if user.tipo_usuario == ROLE_ADMIN:
         raise HTTPException(status_code=403, detail="Administradores não podem excluir outros administradores")
     user_service.repository.soft_delete(db, user)
+    revoke_all_refresh_tokens(db, user_id)
     return None

@@ -8,6 +8,7 @@ import { Building2, ClipboardList, Plus, GraduationCap, BookOpen, LogOut, Bell, 
 import logo from '../../assets/logouepa.png'
 
 import api from '../../services/api'
+import { useSessionUser } from '../../services/sessionStore'
 
 const roleConfig = {
     aluno: { label: 'Aluno', Icon: GraduationCap, color: '#7c3aed' },
@@ -32,14 +33,14 @@ const UserView = ({ userRole, onLogOut }) => {
 
     const cfg = roleConfig[userRole] || roleConfig.aluno
     const RoleIcon = cfg.Icon
-    const adminUser = localStorage.getItem('adminUser') || cfg.label
-    // Email salvo no login (para buscar solicitações do usuário)
-    const userEmail = localStorage.getItem('userEmail') || ''
+    const sessionUser = useSessionUser()
+    const adminUser = sessionUser?.nome || cfg.label
+    const userEmail = sessionUser?.email || ''
 
     const pendentes = solicitacoes.filter(s => s.status === 'pendente').length
 
     const carregarSolicitacoes = async () => {
-        if (!localStorage.getItem('access_token')) return
+        if (!sessionUser) return
         setLoading(true)
         try {
             const res = await api.get('/solicitations/mine')

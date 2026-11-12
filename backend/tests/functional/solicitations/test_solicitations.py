@@ -1,7 +1,7 @@
 import pytest
 from app.models.solicitation import Solicitacao
 
-def test_create_solicitation_success(client, db_session):
+def test_create_solicitation_success(client, db_session, user_token_headers):
     from app.models.room import Sala
     from app.models.type_room import TipoSala
     
@@ -28,15 +28,33 @@ def test_create_solicitation_success(client, db_session):
         "salaId": room.id
     }
     
-    response = client.post("/solicitations/", json=solic_data)
+    response = client.post("/solicitations/", json=solic_data, headers=user_token_headers)
     assert response.status_code == 201
     
     data = response.json()
     assert data["salaId"] == room.id
-    assert data["email"] == "solicitante@test.com"
+    # Solicitante, e-mail e papel vêm da sessão, não do corpo
+    assert data["email"] == "aluno@test.com"
+    assert data["solicitante"] == "Aluno Test"
+    assert data["papel"] == "aluno"
     assert data["status"] == "pendente"
 
-def test_create_solicitation_invalid_room(client):
+def test_create_solicitation_requires_auth(client):
+    solic_data = {
+        "solicitante": "Anônimo",
+        "email": "vitima@uepa.br",
+        "papel": "professor",
+        "motivo": "m",
+        "descricao": "d",
+        "diaSemana": "Segunda",
+        "horarioInicio": "10:00:00",
+        "horarioFim": "11:00:00",
+        "salaId": 1
+    }
+    response = client.post("/solicitations/", json=solic_data)
+    assert response.status_code == 401
+
+def test_create_solicitation_invalid_room(client, user_token_headers):
     solic_data = {
         "solicitante": "Test",
         "email": "test@test.com",
@@ -48,12 +66,12 @@ def test_create_solicitation_invalid_room(client):
         "horarioFim": "11:00:00",
         "salaId": 99999 # Non-existent
     }
-    response = client.post("/solicitations/", json=solic_data)
+    response = client.post("/solicitations/", json=solic_data, headers=user_token_headers)
     assert response.status_code == 404
 
-def test_create_solicitation_missing_fields(client):
+def test_create_solicitation_missing_fields(client, user_token_headers):
     solic_data = {"solicitante": "Incomplete"}
-    response = client.post("/solicitations/", json=solic_data)
+    response = client.post("/solicitations/", json=solic_data, headers=user_token_headers)
     assert response.status_code == 422
 
 def test_get_solicitations_unauthorized(client, db_session):
