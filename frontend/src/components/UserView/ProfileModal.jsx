@@ -7,6 +7,7 @@ import {
 import api from '../../services/api'
 import { fetchCurrentUser, applyUserProfile } from '../../services/AuthService'
 import { getUser, setUser } from '../../services/sessionStore'
+import useEscapeKey from '../../hooks/useEscapeKey'
 
 const cls = {
     input: `w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-800 text-sm
@@ -34,6 +35,7 @@ const SENHA_FIELDS = [
 const ProfileModal = ({ userRole, onClose }) => {
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
+    useEscapeKey(onClose, !saving)
     const [tab, setTab] = useState('info')
     const [success, setSuccess] = useState('')
     const [error, setError] = useState('')

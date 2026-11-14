@@ -4,6 +4,7 @@ import { useSchedule } from '../Schedule/ScheduleContext'
 import api from '../../services/api'
 import { fetchCurrentUser, applyUserProfile } from '../../services/AuthService'
 import { getUser } from '../../services/sessionStore'
+import useEscapeKey from '../../hooks/useEscapeKey'
 import {
     X, Building2, Calendar, Clock, AlignLeft,
     Users, ChevronDown, CheckCircle2, Loader2, AlertCircle
@@ -45,6 +46,9 @@ const RoomRequestForm = ({ onClose, userRole, onSolicitacaoCriada }) => {
     const [error, setError] = useState('')
     const [locked, setLocked] = useState(null)
     const [loadingProfile, setLoadingProfile] = useState(true)
+
+    // Vale para as duas etapas (formulário e confirmação); não fecha durante o envio
+    useEscapeKey(onClose, !submitting)
 
     const [form, setForm] = useState({
         motivo: '',

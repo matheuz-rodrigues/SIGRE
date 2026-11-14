@@ -186,6 +186,58 @@ def _until_as_local_naive(rule: str) -> str:
     return _UNTIL_UTC.sub(convert, rule)
 
 
+def _expand(
+    start_dt: datetime,
+    end_dt: datetime,
+    recurrency: Optional[str],
+    range_start: datetime,
+    range_end: datetime,
+) -> tuple[list[tuple[datetime, datetime]], bool]:
+    """Ocorrências (início, fim) no fuso da aplicação e se a recorrência foi de fato expandida."""
+    start_dt = ensure_app_timezone(start_dt)
+    end_dt = ensure_app_timezone(end_dt)
+    range_start_app = ensure_app_timezone(range_start)
+    range_end_app = ensure_app_timezone(range_end)
+
+    def single() -> list[tuple[datetime, datetime]]:
+        if end_dt < range_start_app or start_dt > range_end_app:
+            return []
+        return [(start_dt, end_dt)]
+
+    if not recurrency:
+        return single(), False
+
+    try:
+        recurrence = rrulestr(_until_as_local_naive(recurrency), dtstart=start_dt.replace(tzinfo=None))
+    except Exception as exc:
+        print(f"Erro ao expandir recorrência local: {exc}")
+        return single(), False
+
+    duration = end_dt - start_dt
+    occurrences = []
+    for occ_naive in recurrence.between(
+        range_start_app.replace(tzinfo=None), range_end_app.replace(tzinfo=None), inc=True
+    ):
+        occurrence_start = ensure_app_timezone(occ_naive)
+        occurrences.append((occurrence_start, occurrence_start + duration))
+    return occurrences, True
+
+
+def expand_occurrences(
+    start_dt: datetime,
+    end_dt: datetime,
+    recurrency: Optional[str],
+    range_start: datetime,
+    range_end: datetime,
+) -> list[tuple[datetime, datetime]]:
+    """
+    Ocorrências (início, fim), no fuso da aplicação, de um horário com ou sem RRULE.
+    Recorrentes: as que começam dentro do intervalo. Simples: o próprio horário, se tocar o intervalo.
+    """
+    occurrences, _ = _expand(start_dt, end_dt, recurrency, range_start, range_end)
+    return occurrences
+
+
 def expand_local_reservation(
     reservation: Alocacao,
     range_start: datetime,
@@ -195,37 +247,16 @@ def expand_local_reservation(
     Retorna lista de eventos para uma reserva, expandindo recorrências no intervalo.
     Para reservas simples retorna lista com 1 elemento (ou vazia se fora do range).
     """
-    start_dt = from_storage_datetime(reservation.dia_horario_inicio)
-    end_dt = from_storage_datetime(reservation.dia_horario_saida)
-    
-    range_start_app = ensure_app_timezone(range_start)
-    range_end_app = ensure_app_timezone(range_end)
-
-    if not reservation.recurrency:
-        if end_dt < range_start_app or start_dt > range_end_app:
-            return []
-        return [build_local_event(reservation, start_dt, end_dt)]
-
-    start_dt_naive = start_dt.replace(tzinfo=None)
-    
-    try:
-        recurrence = rrulestr(_until_as_local_naive(reservation.recurrency), dtstart=start_dt_naive)
-    except Exception as exc:
-        print(f"Erro ao expandir recorrência local {reservation.id}: {exc}")
-        if end_dt < range_start_app or start_dt > range_end_app:
-            return []
-        return [build_local_event(reservation, start_dt, end_dt)]
-
-    duration = end_dt - start_dt
-    events = []
-    
-    rs_naive = range_start_app.replace(tzinfo=None)
-    re_naive = range_end_app.replace(tzinfo=None)
-
-    for occ_naive in recurrence.between(rs_naive, re_naive, inc=True):
-        occurrence_start = ensure_app_timezone(occ_naive)
-        occurrence_end = occurrence_start + duration
-        instance_id = f"{reservation.id}:{occurrence_start.isoformat()}"
-        events.append(build_local_event(reservation, occurrence_start, occurrence_end, instance_id))
-
-    return events
+    occurrences, expanded = _expand(
+        from_storage_datetime(reservation.dia_horario_inicio),
+        from_storage_datetime(reservation.dia_horario_saida),
+        reservation.recurrency,
+        range_start,
+        range_end,
+    )
+    if not expanded:
+        return [build_local_event(reservation, start, end) for start, end in occurrences]
+    return [
+        build_local_event(reservation, start, end, f"{reservation.id}:{start.isoformat()}")
+        for start, end in occurrences
+    ]

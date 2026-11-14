@@ -28,7 +28,8 @@ CSRF_COOKIE = "csrf_token"
 COOKIE_SECURE = settings.COOKIE_SECURE
 COOKIE_SAMESITE = "strict"
 COOKIE_HTTPONLY = True
-COOKIE_PATH = "/auth"
+# Configurável: atrás de um proxy que publica a API em /api, o navegador só envia o cookie se o path for /api/auth
+COOKIE_PATH = settings.REFRESH_COOKIE_PATH
 COOKIE_MAX_AGE = settings.JWT_REFRESH_EXPIRES_DAYS * 24 * 60 * 60  # em segundos
 ACCESS_COOKIE_MAX_AGE = settings.JWT_ACCESS_EXPIRES_MINUTES * 60
 

@@ -2,6 +2,7 @@ import { toast } from 'sonner'
 import { createContext, useContext, useState, useEffect } from 'react';
 import api from '../../services/api';
 import { getUser } from '../../services/sessionStore';
+import useEscapeKey from '../../hooks/useEscapeKey';
 
 export const ScheduleContext = createContext();
 
@@ -269,6 +270,7 @@ export const ScheduleProvider = ({ children }) => {
     }
 
     const [deleteModal, setDeleteModal] = useState({ show: false, id: null, isRecurrent: false });
+    useEscapeKey(() => setDeleteModal({ show: false, id: null, isRecurrent: false }), deleteModal.show);
 
     const confirmDelete = async (action) => {
         const id = deleteModal.id;

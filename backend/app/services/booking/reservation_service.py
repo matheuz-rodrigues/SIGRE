@@ -15,6 +15,7 @@ from app.repositories.allocation_repository import allocation_repository
 from app.builders.reservation_builder import (
     build_local_event,
     expand_local_reservation,
+    expand_occurrences,
     PLATFORM_EVENT_SOURCE,
     build_event_summary,
     build_event_description,
@@ -22,7 +23,6 @@ from app.builders.reservation_builder import (
 )
 from app.services.calendar import google_calendar
 from app.services.infra.datetime_utils import ensure_utc, ensure_app_timezone, from_storage_datetime, to_storage_datetime
-from googleapiclient.errors import HttpError as GoogleHttpError
 from app.schemas.reservation import ReservationCreate, ReservationUpdate
 from app.services.infra.base_service import BaseService
 from app.services.auth.rbac import ROLE_ADMIN
@@ -48,6 +48,42 @@ _WEEKDAY_TO_RRULE = {
     "Domingo": "SU",
 }
 
+# Campos de data/hora da reserva: chegam do front em UTC ou com offset e são gravados sem fuso, na hora de Belém
+_DATETIME_FIELDS = ("dia_horario_inicio", "dia_horario_saida", "data_inicio", "data_fim")
+
+# Até onde uma recorrência sem UNTIL é verificada contra conflitos
+_CONFLICT_HORIZON = timedelta(days=366)
+
+
+def _to_app_timezone(data: dict) -> None:
+    for field in _DATETIME_FIELDS:
+        if data.get(field) is not None:
+            data[field] = ensure_app_timezone(data[field])
+
+
+def _to_storage(data: dict) -> None:
+    for field in _DATETIME_FIELDS:
+        if data.get(field) is not None:
+            data[field] = to_storage_datetime(data[field])
+
+
+def _expand_weekly_range(data: dict, start: datetime, end: datetime, dia_semana: str) -> None:
+    """O front manda um intervalo de meses para um evento com `dia_semana`: vira a 1ª ocorrência + RRULE semanal."""
+    if (end - start).total_seconds() <= 86400:
+        return
+    weekday_code = _WEEKDAY_TO_RRULE.get(dia_semana)
+    if not weekday_code:
+        return
+    adjusted_end = start.replace(hour=end.hour, minute=end.minute)
+    if adjusted_end <= start:
+        adjusted_end += timedelta(days=1)
+    # UNTIL às 23:59:59 do último dia em Belém, escrito em UTC
+    until_utc = ensure_utc(end.replace(hour=23, minute=59, second=59, microsecond=0))
+    data["dia_horario_saida"] = adjusted_end
+    data["recurrency"] = f"RRULE:FREQ=WEEKLY;BYDAY={weekday_code};UNTIL={until_utc:%Y%m%dT%H%M%SZ}"
+    data["data_inicio"] = start.replace(hour=0, minute=0, second=0, microsecond=0)
+    data["data_fim"] = end.replace(hour=23, minute=59, second=59, microsecond=0)
+
 
 class AllocationService(BaseService[Alocacao]):
     def __init__(self):
@@ -69,30 +105,73 @@ class AllocationService(BaseService[Alocacao]):
                 ),
             )
 
-    def _conflicts_google(self, db: Session, user_id: int, sala_id: int, start_dt: datetime, end_dt: datetime) -> bool:
-        self._require_google_credentials(db, user_id)
-        start_dt = ensure_utc(start_dt)
-        end_dt = ensure_utc(end_dt)
-        try:
-            items = google_calendar.list_events(db=db, user_id=user_id, time_min_utc=start_dt, time_max_utc=end_dt)
-        except GoogleHttpError as e:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Erro na API do Google Calendar ({e.resp.status}): {e.reason}. Verifique a configuração do calendário em Admin → Calendário.",
+    def _assert_room_available(
+        self,
+        db: Session,
+        sala_id: int,
+        start: datetime,
+        end: datetime,
+        recurrency: Optional[str],
+        exclude_id: Optional[int] = None,
+    ) -> None:
+        """
+        Regra de negócio: nunca duas reservas aprovadas na mesma sala com horário sobreposto.
+        A checagem é no banco, expandindo recorrências; o Google é só espelho.
+        """
+        # Trava a sala até o commit: duas aprovações simultâneas para a mesma sala viram uma fila
+        db.query(Sala).filter(Sala.id == sala_id).with_for_update().first()
+
+        start = ensure_app_timezone(start)
+        end = ensure_app_timezone(end)
+        window_end = start + _CONFLICT_HORIZON if recurrency else end
+        candidates = expand_occurrences(start, end, recurrency, start, window_end)
+        if not candidates:
+            return
+
+        # Margem de 1 dia para pegar ocorrências que começam antes e ainda estão em andamento
+        range_start = candidates[0][0] - timedelta(days=1)
+        range_end = max(e for _, e in candidates)
+        existing = self.repository.list_in_range(
+            db=db,
+            date_from_local=to_storage_datetime(range_start),
+            date_to_local=to_storage_datetime(range_end),
+            room_id=sala_id,
+            status="APPROVED",
+            is_admin=True,
+        )
+        for other in existing:
+            if exclude_id is not None and other.id == exclude_id:
+                continue
+            occupied = expand_occurrences(
+                from_storage_datetime(other.dia_horario_inicio),
+                from_storage_datetime(other.dia_horario_saida),
+                other.recurrency,
+                range_start,
+                range_end,
             )
-        if items is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    "O token do Google Calendar expirou ou foi revogado. "
-                    "Por favor, desconecte e conecte novamente em Admin → Calendário."
-                ),
-            )
-        for ev in items:
-            priv = (ev.get("extendedProperties") or {}).get("private") or {}
-            if str(priv.get("fk_sala")) == str(sala_id):
-                return True
-        return False
+            for cand_start, cand_end in candidates:
+                for occ_start, occ_end in occupied:
+                    if cand_start < occ_end and occ_start < cand_end:
+                        label = f" ({other.uso})" if other.uso else ""
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=(
+                                f"Sala já reservada em {occ_start:%d/%m/%Y} "
+                                f"das {occ_start:%H:%M} às {occ_end:%H:%M}{label}."
+                            ),
+                        )
+
+    def _google_owner_id(self, db: Session, alocacao: Alocacao, current_user) -> int:
+        """Usuário em cuja Agenda Google o evento da reserva foi criado."""
+        if alocacao.google_owner_id:
+            return alocacao.google_owner_id
+        # Reservas anteriores ao registro do dono: procura o evento entre as contas Google conectadas
+        others = db.query(GoogleCredential.user_id).filter(GoogleCredential.user_id != current_user.id).all()
+        for user_id in [current_user.id, *(uid for (uid,) in others)]:
+            if google_calendar.get_event_by_id(db, user_id, alocacao.google_event_id):
+                self.repository.update(db, alocacao, {"google_owner_id": user_id})
+                return user_id
+        return current_user.id
 
     def list_reservations(
         self,
@@ -176,6 +255,7 @@ class AllocationService(BaseService[Alocacao]):
             raise HTTPException(status_code=404, detail="Sala da solicitação não encontrada.")
 
         start_local, end_local = self._solicitation_datetimes(solicitacao)
+        self._assert_room_available(db, solicitacao.fk_sala, start_local, end_local, None)
         data = {
             "fk_usuario": applicant.id,
             "fk_sala": solicitacao.fk_sala,
@@ -200,56 +280,41 @@ class AllocationService(BaseService[Alocacao]):
         nova = self.repository.create(db, data)
         try:
             eid = self._sync_google_create(db, nova, admin_user, room)
-            self.repository.update(db, nova, {"google_event_id": eid})
+            self.repository.update(db, nova, {"google_event_id": eid, "google_owner_id": admin_user.id})
         except Exception:
             self.repository.delete(db, nova.id)
             raise
         return nova.id
 
     def create_reservation(self, db: Session, payload: ReservationCreate, current_user) -> dict:
-        if payload.dia_horario_saida <= payload.dia_horario_inicio:
+        # O front manda UTC (toISOString); tudo é tratado na hora de Belém e gravado sem fuso
+        data = payload.model_dump()
+        _to_app_timezone(data)
+        if data["dia_horario_saida"] <= data["dia_horario_inicio"]:
             raise HTTPException(status_code=400, detail="A data de saída deve ser posterior à data de início.")
 
-        room = db.query(Sala).filter(Sala.id == payload.fk_sala).first()
+        room = db.query(Sala).filter(Sala.id == data["fk_sala"]).first()
         if not room:
             raise HTTPException(status_code=404, detail="Sala não encontrada.")
 
         from app.services.auth.rbac import ROLE_ADMIN
         if current_user.tipo_usuario < ROLE_ADMIN:
             # Usuário comum só cria reserva pendente e em nome próprio
-            payload.status = "PENDING"
-            payload.fk_usuario = current_user.id
-        elif not payload.status:
-            payload.status = "APPROVED"
+            data["status"] = "PENDING"
+            data["fk_usuario"] = current_user.id
+        elif not data.get("status"):
+            data["status"] = "APPROVED"
 
+        if data.get("dia_semana") and not data.get("recurrency"):
+            _expand_weekly_range(data, data["dia_horario_inicio"], data["dia_horario_saida"], data["dia_semana"])
+
+        if data["status"] == "APPROVED":
+            self._assert_room_available(
+                db, data["fk_sala"], data["dia_horario_inicio"], data["dia_horario_saida"], data.get("recurrency")
+            )
+
+        _to_storage(data)
         try:
-            data = payload.model_dump()
-            
-            # Ajusta `dia_horario_saida` e preenche `recurrency` caso o frontend
-            # mande um intervalo de meses para um evento com `dia_semana`.
-            start_dt_local = data.get("dia_horario_inicio")
-            end_dt_local = data.get("dia_horario_saida")
-            dia_semana = data.get("dia_semana")
-            recurrency = data.get("recurrency")
-            
-            if dia_semana and not recurrency and start_dt_local and end_dt_local:
-                duration = end_dt_local - start_dt_local
-                if duration.total_seconds() > 86400: # > 1 dia
-                    h_end, m_end = end_dt_local.hour, end_dt_local.minute
-                    adjusted_end = start_dt_local.replace(hour=h_end, minute=m_end)
-                    if adjusted_end <= start_dt_local:
-                        adjusted_end += timedelta(days=1)
-                    
-                    until_dt = ensure_utc(end_dt_local).replace(hour=23, minute=59, second=59)
-                    until_str = until_dt.strftime("%Y%m%dT%H%M%SZ")
-                    weekday_code = _WEEKDAY_TO_RRULE.get(dia_semana)
-                    
-                    if weekday_code:
-                        data["dia_horario_saida"] = adjusted_end
-                        data["recurrency"] = f"RRULE:FREQ=WEEKLY;BYDAY={weekday_code};UNTIL={until_str}"
-                        data["data_inicio"] = to_storage_datetime(start_dt_local.replace(hour=0, minute=0, second=0, microsecond=0))
-                        data["data_fim"] = to_storage_datetime(end_dt_local.replace(hour=23, minute=59, second=59, microsecond=0))
-            
             nova = self.repository.create(db, data)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Falha ao salvar no Banco Local: {e}")
@@ -257,7 +322,7 @@ class AllocationService(BaseService[Alocacao]):
         if nova.status == "APPROVED":
             try:
                 eid = self._sync_google_create(db, nova, current_user, room)
-                self.repository.update(db, nova, {"google_event_id": eid})
+                self.repository.update(db, nova, {"google_event_id": eid, "google_owner_id": current_user.id})
             except Exception:
                 self.repository.delete(db, nova.id)
                 raise
@@ -290,12 +355,10 @@ class AllocationService(BaseService[Alocacao]):
                 else:
                     pass
                 
-                until_dt = ensure_utc(from_storage_datetime(alocacao.data_fim)).replace(hour=23, minute=59, second=59)
+                # 23:59:59 do último dia em Belém, escrito em UTC
+                until_dt = ensure_utc(from_storage_datetime(alocacao.data_fim).replace(hour=23, minute=59, second=59))
                 until_str = until_dt.strftime("%Y%m%dT%H%M%SZ")
                 recurrency = f"RRULE:FREQ=WEEKLY;BYDAY={weekday_code};UNTIL={until_str}"
-
-        if self._conflicts_google(db, current_user.id, alocacao.fk_sala, start_dt, end_dt):
-            raise HTTPException(status_code=409, detail="Conflito detectado no Google Calendar.")
 
         room_label = room.codigo_sala or str(room.id)
         extended_props = build_event_private_metadata(alocacao, status_override="APPROVED")
@@ -344,8 +407,8 @@ class AllocationService(BaseService[Alocacao]):
         if not alocacao.google_event_id:
             return
         try:
-            self._require_google_credentials(db, current_user.id)
-            ok = google_calendar.delete_event(db=db, user_id=current_user.id, event_id=alocacao.google_event_id)
+            owner_id = self._google_owner_id(db, alocacao, current_user)
+            ok = google_calendar.delete_event(db=db, user_id=owner_id, event_id=alocacao.google_event_id)
             if not ok:
                 import logging
                 logging.warning(f"Aviso: Não foi possível remover o evento {alocacao.google_event_id} no Google Calendar. Continuando com a exclusão local.")
@@ -360,9 +423,19 @@ class AllocationService(BaseService[Alocacao]):
         if alocacao.status == "APPROVED" and alocacao.google_event_id:
             return {"message": "Reserva já está aprovada."}
 
+        self._assert_room_available(
+            db,
+            alocacao.fk_sala,
+            from_storage_datetime(alocacao.dia_horario_inicio),
+            from_storage_datetime(alocacao.dia_horario_saida),
+            alocacao.recurrency,
+            exclude_id=alocacao.id,
+        )
         room = db.query(Sala).filter(Sala.id == alocacao.fk_sala).first()
         eid = self._sync_google_create(db, alocacao, current_user, room)
-        self.repository.update(db, alocacao, {"google_event_id": eid, "status": "APPROVED"})
+        self.repository.update(
+            db, alocacao, {"google_event_id": eid, "google_owner_id": current_user.id, "status": "APPROVED"}
+        )
         return {"message": "Reserva aprovada e sincronizada."}
 
     def reject_reservation(self, db: Session, reservation_id: int, current_user=None) -> dict:
@@ -371,14 +444,21 @@ class AllocationService(BaseService[Alocacao]):
             raise HTTPException(status_code=404, detail="Reserva não encontrada.")
         if current_user and alocacao.google_event_id:
             self._sync_google_delete_if_exists(db, alocacao, current_user)
-            self.repository.update(db, alocacao, {"google_event_id": None})
+            self.repository.update(db, alocacao, {"google_event_id": None, "google_owner_id": None})
         self.repository.update_status(db, alocacao, "REJECTED")
         return {"message": "Reserva rejeitada."}
 
     def _sync_google_update(self, db: Session, alocacao: Alocacao, current_user, room: Sala) -> None:
         if not alocacao.google_event_id:
             return
-        self._require_google_credentials(db, current_user.id)
+        # O evento só pode ser editado na agenda de quem o criou
+        owner_id = self._google_owner_id(db, alocacao, current_user)
+        if owner_id != current_user.id and google_calendar._get_credentials(db, owner_id) is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="O evento está na Agenda Google de outro usuário, que não está mais conectada.",
+            )
+        self._require_google_credentials(db, owner_id)
         start_dt = ensure_utc(from_storage_datetime(alocacao.dia_horario_inicio))
         end_dt = ensure_utc(from_storage_datetime(alocacao.dia_horario_saida))
         room_label = room.codigo_sala or str(room.id)
@@ -411,7 +491,7 @@ class AllocationService(BaseService[Alocacao]):
         if room.descricao_sala:
             patch["location"] = room.descricao_sala
         updated = google_calendar.update_event(
-            db=db, user_id=current_user.id, event_id=alocacao.google_event_id, patch=patch
+            db=db, user_id=owner_id, event_id=alocacao.google_event_id, patch=patch
         )
         if updated is None:
             raise HTTPException(
@@ -461,20 +541,18 @@ class AllocationService(BaseService[Alocacao]):
                     utc_dt = ensure_utc(local_dt)
                     utc_formatted = utc_dt.strftime("%Y%m%dT%H%M%SZ")
                     instance_google_id = f"{alocacao.google_event_id}_{utc_formatted}"
-                    
-                    # Usa o credencial do dono da alocação ou de quem já tenha credencial
-                    creds_row = db.query(GoogleCredential).first()
-                    if creds_row:
-                        google_calendar.delete_event(db=db, user_id=creds_row.user_id, event_id=instance_google_id)
+
+                    # A instância está na agenda de quem criou o evento
+                    owner_id = self._google_owner_id(db, alocacao, current_user)
+                    google_calendar.delete_event(db=db, user_id=owner_id, event_id=instance_google_id)
                 except Exception as e:
                     print(f"Failed to delete single instance in Google Calendar: {e}")
             return
 
         if alocacao.status == "APPROVED" and alocacao.google_event_id:
             try:
-                creds_row = db.query(GoogleCredential).first()
-                if creds_row:
-                    google_calendar.delete_event(db=db, user_id=creds_row.user_id, event_id=alocacao.google_event_id)
+                owner_id = self._google_owner_id(db, alocacao, current_user)
+                google_calendar.delete_event(db=db, user_id=owner_id, event_id=alocacao.google_event_id)
             except Exception as e:
                 print(f"Erro ao deletar evento no Google: {e}")
 
@@ -515,35 +593,37 @@ class AllocationService(BaseService[Alocacao]):
         if not update_data:
             raise HTTPException(status_code=400, detail="Nenhum dado para atualizar")
 
-        start_dt_local = update_data.get("dia_horario_inicio", alocacao.dia_horario_inicio)
-        end_dt_local = update_data.get("dia_horario_saida", alocacao.dia_horario_saida)
+        # Valores novos (UTC ou com offset) e os do banco (Belém sem fuso) comparados no mesmo fuso
+        _to_app_timezone(update_data)
+        start_dt_local = update_data.get("dia_horario_inicio") or from_storage_datetime(alocacao.dia_horario_inicio)
+        end_dt_local = update_data.get("dia_horario_saida") or from_storage_datetime(alocacao.dia_horario_saida)
 
-        if start_dt_local and end_dt_local and end_dt_local <= start_dt_local:
+        if end_dt_local <= start_dt_local:
             raise HTTPException(status_code=400, detail="A data de saída deve ser posterior à data de início.")
 
         if "dia_horario_inicio" in update_data or "dia_horario_saida" in update_data or "dia_semana" in update_data:
             dia_semana = update_data.get("dia_semana", alocacao.dia_semana)
             recurrency = update_data.get("recurrency", alocacao.recurrency)
-            
-            if dia_semana and not recurrency and start_dt_local and end_dt_local:
-                duration = end_dt_local - start_dt_local
-                if duration.total_seconds() > 86400: # > 1 dia
-                    h_end, m_end = end_dt_local.hour, end_dt_local.minute
-                    adjusted_end = start_dt_local.replace(hour=h_end, minute=m_end)
-                    if adjusted_end <= start_dt_local:
-                        adjusted_end += timedelta(days=1)
-                    
-                    until_dt = ensure_utc(end_dt_local).replace(hour=23, minute=59, second=59)
-                    until_str = until_dt.strftime("%Y%m%dT%H%M%SZ")
-                    weekday_code = _WEEKDAY_TO_RRULE.get(dia_semana)
-                    
-                    if weekday_code:
-                        update_data["dia_horario_saida"] = adjusted_end
-                        update_data["recurrency"] = f"RRULE:FREQ=WEEKLY;BYDAY={weekday_code};UNTIL={until_str}"
-                        update_data["data_inicio"] = to_storage_datetime(start_dt_local.replace(hour=0, minute=0, second=0, microsecond=0))
-                        update_data["data_fim"] = to_storage_datetime(end_dt_local.replace(hour=23, minute=59, second=59, microsecond=0))
+            if dia_semana and not recurrency:
+                _expand_weekly_range(update_data, start_dt_local, end_dt_local, dia_semana)
 
         prev_status = (alocacao.status or "").upper()
+        final_status = (update_data.get("status") or alocacao.status or "").upper()
+        schedule_changed = any(
+            field in update_data
+            for field in ("fk_sala", "dia_horario_inicio", "dia_horario_saida", "recurrency", "dia_semana")
+        )
+        if final_status == "APPROVED" and (schedule_changed or prev_status != "APPROVED"):
+            self._assert_room_available(
+                db,
+                update_data.get("fk_sala") or alocacao.fk_sala,
+                update_data.get("dia_horario_inicio") or start_dt_local,
+                update_data.get("dia_horario_saida") or end_dt_local,
+                update_data.get("recurrency", alocacao.recurrency),
+                exclude_id=alocacao.id,
+            )
+
+        _to_storage(update_data)
         updated = self.repository.update(db, alocacao, update_data)
         room = db.query(Sala).filter(Sala.id == updated.fk_sala).first()
         updated_status = (updated.status or "").upper()
@@ -553,14 +633,14 @@ class AllocationService(BaseService[Alocacao]):
             else:
                 try:
                     eid = self._sync_google_create(db, updated, current_user, room)
-                    self.repository.update(db, updated, {"google_event_id": eid})
+                    self.repository.update(db, updated, {"google_event_id": eid, "google_owner_id": current_user.id})
                 except Exception:
                     if prev_status != "APPROVED":
                         self.repository.update(db, updated, {"status": alocacao.status})
                     raise
         elif updated.google_event_id and updated_status != "APPROVED":
             self._sync_google_delete_if_exists(db, updated, current_user)
-            updated = self.repository.update(db, updated, {"google_event_id": None})
+            updated = self.repository.update(db, updated, {"google_event_id": None, "google_owner_id": None})
 
         start_dt = from_storage_datetime(updated.dia_horario_inicio)
         end_dt = from_storage_datetime(updated.dia_horario_saida)

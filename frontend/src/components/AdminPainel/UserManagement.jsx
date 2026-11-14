@@ -4,6 +4,7 @@ import { Users, GraduationCap, BookOpen, XCircle, UserPlus, Loader2, Check, X, P
 import api from '../../services/api';
 import { getCourses } from '../../services/CourseService';
 import { getUser } from '../../services/sessionStore';
+import useEscapeKey from '../../hooks/useEscapeKey';
 
 const TERMOS_PROIBIDOS = ['senha', 'password', '12345', 'qwerty', 'admin', 'teste', 'sigra', 'uepa', 'aluno', 'prof']
 
@@ -238,6 +239,8 @@ export default function UserManagement({ usuarios, onAprovar, onRecusar, onDelet
     setUsuarioSelecionado(null)
     setSalvandoEdicao(false)
   }
+
+  useEscapeKey(fecharModalEdicao, !!usuarioSelecionado && !salvandoEdicao)
 
   const salvarEdicao = async (e) => {
     e.preventDefault()

@@ -88,8 +88,10 @@ export const useDataManager = (initialTab = 'professores') => {
             setLoading(true)
             if (payload.id) {
                 await service.update(payload.id, payload)
+                toast.success('Alterações salvas.')
             } else {
                 await service.create(payload)
+                toast.success('Cadastro criado.')
             }
             recarregarDados()
             if (activeTab === 'tiposSala') {
@@ -113,6 +115,7 @@ export const useDataManager = (initialTab = 'professores') => {
         try {
             setLoading(true)
             await service.delete(id)
+            toast.success('Item excluído.')
             recarregarDados()
             if (activeTab === 'tiposSala') {
                 getRoomTypes().then(setTiposSala).catch(() => setTiposSala([]))

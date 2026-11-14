@@ -1,6 +1,7 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useSchedule } from '../Schedule/ScheduleContext'
-import { generateICS, downloadICS } from '../../utils/exportICS'
+import useEscapeKey from '../../hooks/useEscapeKey'
+import { generateICS, downloadICS, diaSemanaDaData } from '../../utils/exportICS'
 import {
     X, Download, Calendar, Building2,
     GraduationCap, CheckCircle2, Filter, FileDown, Info
@@ -29,16 +30,25 @@ const ExportICSModal = ({ onClose }) => {
 
     const set = (field, value) => setFilters(prev => ({ ...prev, [field]: value }))
 
-    // Horários filtrados com base nas seleções
+    // Horários filtrados com base nas seleções (cada item é uma ocorrência)
     const horariosFiltrados = useMemo(() => {
+        const periodo = periodos.find(p => p.id === parseInt(filters.periodoId))
         return horarios.filter(h => {
-            if (filters.periodoId && h.periodoId !== parseInt(filters.periodoId)) return false
+            if (String(h.status).toUpperCase() === 'REJECTED') return false
+            if (periodo) {
+                // Aulas trazem o período; eventos avulsos e solicitações entram pela data
+                const noPeriodo = h.periodoId
+                    ? h.periodoId === periodo.id
+                    : Boolean(h.dataInicio && periodo.dataInicio && periodo.dataFim
+                        && h.dataInicio >= periodo.dataInicio && h.dataInicio <= periodo.dataFim)
+                if (!noPeriodo) return false
+            }
             if (filters.salaId && String(h.salaId) !== String(filters.salaId)) return false
             if (filters.cursoId && h.cursoId !== parseInt(filters.cursoId)) return false
-            if (filters.diaSemana && h.diaSemana !== filters.diaSemana) return false
+            if (filters.diaSemana && (h.diaSemana || diaSemanaDaData(h.dataInicio)) !== filters.diaSemana) return false
             return true
         })
-    }, [horarios, filters])
+    }, [horarios, periodos, filters])
 
     // Salas únicas nos resultados filtrados
     const salasNoFiltro = useMemo(() => {
@@ -219,10 +229,10 @@ const ExportICSModal = ({ onClose }) => {
                         {horariosFiltrados.length > 0 ? (
                             <>
                                 <p className="text-sm font-bold text-blue-800">
-                                    {horariosFiltrados.length} alocaç{horariosFiltrados.length !== 1 ? 'ões' : 'ão'} encontrada{horariosFiltrados.length !== 1 ? 's' : ''}
+                                    {horariosFiltrados.length} ocorrência{horariosFiltrados.length !== 1 ? 's' : ''} encontrada{horariosFiltrados.length !== 1 ? 's' : ''}
                                 </p>
                                 <p className="text-xs text-blue-500 mt-0.5">
-                                    {salasNoFiltro.length} sala{salasNoFiltro.length !== 1 ? 's' : ''} · cada aula vira um evento recorrente semanal no calendário
+                                    {salasNoFiltro.length} sala{salasNoFiltro.length !== 1 ? 's' : ''} · aulas, eventos e reservas, cada ocorrência vira um evento no calendário
                                 </p>
                             </>
                         ) : (
@@ -251,11 +261,7 @@ const ExportICSModal = ({ onClose }) => {
 
 // Wrapper do overlay
 const Overlay = ({ children, onClose }) => {
-    useEffect(() => {
-        const onKey = (e) => { if (e.key === 'Escape') onClose() }
-        window.addEventListener('keydown', onKey)
-        return () => window.removeEventListener('keydown', onKey)
-    }, [onClose])
+    useEscapeKey(onClose)
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"

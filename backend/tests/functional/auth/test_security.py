@@ -94,6 +94,16 @@ def test_login_sets_httponly_cookies_and_csrf(client, db_session):
     assert client.get("/users/me").status_code == 200
 
 
+def test_refresh_cookie_path_follows_setting(client, db_session, monkeypatch):
+    from app.routers import auth as auth_router
+    monkeypatch.setattr(auth_router, "COOKIE_PATH", "/api/auth")
+    _make_user(db_session, "cookiepath@aluno.uepa.br", "cookiepath")
+    resp = _login(client, "cookiepath")
+    assert resp.status_code == 200
+    refresh = [c for c in resp.headers.get_list("set-cookie") if c.startswith("refresh_token=")]
+    assert len(refresh) == 1 and "Path=/api/auth" in refresh[0]
+
+
 def test_cookie_session_requires_csrf_header(client, db_session):
     user = _make_user(db_session, "csrf@aluno.uepa.br", "csrfuser")
     csrf = _login(client, "csrfuser").json()["csrf_token"]

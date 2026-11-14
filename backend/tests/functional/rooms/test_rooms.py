@@ -94,6 +94,26 @@ def test_delete_room(client, admin_token_headers, db_session):
     if room_deleted:
         assert room_deleted.ativada == False or room_deleted.sala_ativada == False
 
+def test_delete_room_with_history_returns_409(client, admin_token_headers, db_session):
+    from datetime import time
+    from app.models.solicitation import Solicitacao
+
+    room = Sala(codigo_sala="777", descricao_sala="Sala com histórico")
+    db_session.add(room)
+    db_session.commit()
+    db_session.add(Solicitacao(
+        solicitante="Aluno", email="aluno@test.com", papel="aluno", motivo="Estudo",
+        descricao="Grupo de estudo", dia_semana="Terça", horario_inicio=time(8, 0),
+        horario_fim=time(9, 0), fk_sala=room.id, status="recusado",
+    ))
+    db_session.commit()
+
+    response = client.delete(f"/rooms/{room.id}", headers=admin_token_headers)
+    assert response.status_code == 409
+    assert response.json()["detail"] == "A sala não pode ser excluída porque está vinculada a 1 solicitação."
+    assert db_session.query(Sala).filter(Sala.id == room.id).first() is not None
+
+
 def test_delete_room_unauthorized(client, db_session):
     room = db_session.query(Sala).first()
     if not room:

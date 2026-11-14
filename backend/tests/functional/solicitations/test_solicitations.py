@@ -117,6 +117,34 @@ def test_list_my_solicitations(client, db_session):
     assert isinstance(response.json(), list)
 
 
+def test_refuse_solicitation_requires_reason(client, db_session, admin_token_headers):
+    from datetime import time
+    from app.models.room import Sala
+
+    room = db_session.query(Sala).first()
+    solic = Solicitacao(
+        solicitante="Recusa", email="recusa@test.com", papel="aluno", motivo="Estudo",
+        descricao="Grupo", dia_semana="Quarta", horario_inicio=time(14, 0), horario_fim=time(15, 0),
+        fk_sala=room.id, status="pendente",
+    )
+    db_session.add(solic)
+    db_session.commit()
+
+    for body in ({"status": "recusado"}, {"status": "recusado", "motivoRecusa": "   "}):
+        response = client.patch(f"/solicitations/{solic.id}/status", json=body, headers=admin_token_headers)
+        assert response.status_code == 422
+    db_session.refresh(solic)
+    assert solic.status == "pendente"
+
+    response = client.patch(
+        f"/solicitations/{solic.id}/status",
+        json={"status": "recusado", "motivoRecusa": " Sala em manutenção "},
+        headers=admin_token_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["motivoRecusa"] == "Sala em manutenção"
+
+
 def test_update_solicitation_status(client, db_session, admin_token_headers):
     from app.models.user import Usuario
     from app.services.auth.security import hash_password

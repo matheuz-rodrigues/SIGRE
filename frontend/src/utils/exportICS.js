@@ -1,28 +1,27 @@
 // ─────────────────────────────────────────────────────────────────
 // Utilitário de exportação .ics (iCalendar RFC 5545)
-// Gera eventos recorrentes semanais para cada alocação
+// Cada ocorrência vira um evento: aulas semanais, eventos avulsos e reservas de solicitação.
+// Os horários vêm já expandidos da API (uma entrada por ocorrência, com as exclusões aplicadas).
 // ─────────────────────────────────────────────────────────────────
 
-const DIA_SEMANA_BYDAY = {
-    'Domingo':  'SU',
-    'Segunda':  'MO',
-    'Terça':    'TU',
-    'Quarta':   'WE',
-    'Quinta':   'TH',
-    'Sexta':    'FR',
-    'Sábado':   'SA',
-}
+import { APP_TIMEZONE } from './datetime'
 
-// Índice JS do dia (0=Dom, 1=Seg...)
-const DIA_SEMANA_IDX = {
-    'Domingo':  0,
-    'Segunda':  1,
-    'Terça':    2,
-    'Quarta':   3,
-    'Quinta':   4,
-    'Sexta':    5,
-    'Sábado':   6,
-}
+const DIAS_SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
+
+// Belém não tem horário de verão: UTC-3 o ano todo
+const VTIMEZONE_BELEM = [
+    'BEGIN:VTIMEZONE',
+    `TZID:${APP_TIMEZONE}`,
+    'BEGIN:STANDARD',
+    'DTSTART:19700101T000000',
+    'TZOFFSETFROM:-0300',
+    'TZOFFSETTO:-0300',
+    'TZNAME:-03',
+    'END:STANDARD',
+    'END:VTIMEZONE',
+]
+
+const encoder = new TextEncoder()
 
 /**
  * Formata uma data + hora no formato iCalendar: YYYYMMDDTHHMMSS
@@ -36,26 +35,12 @@ function toICSDateTime(dateStr, timeStr) {
 }
 
 /**
- * Formata apenas data: YYYYMMDD
+ * Dia da semana ("Segunda", ...) de uma data "YYYY-MM-DD", sem passar por UTC
  */
-function toICSDate(dateStr) {
-    const [y, m, d] = dateStr.split('-')
-    return `${y}${m.padStart(2,'0')}${d.padStart(2,'0')}`
-}
-
-/**
- * Encontra a primeira ocorrência de um dia da semana a partir de dataInicio
- * Ex: dataInicio = "2025-03-01" (sábado), quero "Segunda" → retorna "2025-03-03"
- */
-function firstOccurrence(dataInicio, diaSemana) {
-    const targetIdx = DIA_SEMANA_IDX[diaSemana]
-    if (targetIdx === undefined) return dataInicio
-
-    const date = new Date(dataInicio + 'T00:00:00')
-    const currentIdx = date.getDay()
-    const diff = (targetIdx - currentIdx + 7) % 7
-    date.setDate(date.getDate() + diff)
-    return date.toISOString().split('T')[0]
+export function diaSemanaDaData(dateStr) {
+    if (!dateStr) return ''
+    const [y, m, d] = dateStr.split('-').map(Number)
+    return DIAS_SEMANA[new Date(y, m - 1, d).getDay()]
 }
 
 /**
@@ -71,31 +56,42 @@ function escapeICS(str = '') {
 }
 
 /**
- * Quebra linhas longas conforme RFC 5545 (máx 75 octetos, continuação com espaço)
+ * Quebra linhas longas conforme RFC 5545: no máximo 75 octetos por linha,
+ * continuação começando com espaço. Conta bytes UTF-8 (acentos ocupam 2) e não parte caracteres.
  */
 function foldLine(line) {
-    if (line.length <= 75) return line
-    const chunks = []
-    chunks.push(line.slice(0, 75))
-    let i = 75
-    while (i < line.length) {
-        chunks.push(' ' + line.slice(i, i + 74))
-        i += 74
+    if (encoder.encode(line).length <= 75) return line
+    const parts = []
+    let current = ''
+    let size = 0
+    let limit = 75
+    for (const ch of line) {
+        const bytes = encoder.encode(ch).length
+        if (size + bytes > limit) {
+            parts.push(current)
+            current = ''
+            size = 0
+            limit = 74 // o espaço da continuação conta
+        }
+        current += ch
+        size += bytes
     }
-    return chunks.join('\r\n')
+    parts.push(current)
+    return parts.join('\r\n ')
 }
 
 /**
- * Gera um UID único para cada evento
+ * UID estável por ocorrência: reimportar o arquivo atualiza os eventos em vez de duplicar
  */
-function generateUID(horario) {
-    return `sca-uepa-${horario.id}-${Date.now()}@uepa.br`
+function generateUID(horario, dtStart) {
+    const baseId = String(horario.id).split(':')[0]
+    return `sigra-${baseId}-${dtStart.slice(0, 13)}@uepa.br`
 }
 
 /**
  * Gera o conteúdo .ics completo a partir de um array de horários filtrados
  *
- * @param {Array}  horarios   - array do contexto (filtrado externamente)
+ * @param {Array}  horarios   - array do contexto (filtrado externamente), uma entrada por ocorrência
  * @param {Array}  salas      - array de salas para lookup
  * @param {Array}  cursos     - array de cursos para lookup
  * @param {string} calName    - nome do calendário
@@ -108,42 +104,36 @@ export function generateICS(horarios, salas, cursos, calName = 'SCA UEPA — Hor
         'VERSION:2.0',
         'PRODID:-//SCA UEPA//Sistema Cronos de Alocacao//PT',
         `X-WR-CALNAME:${escapeICS(calName)}`,
-        'X-WR-TIMEZONE:America/Manaus',
+        `X-WR-TIMEZONE:${APP_TIMEZONE}`,
         'CALSCALE:GREGORIAN',
         'METHOD:PUBLISH',
+        ...VTIMEZONE_BELEM,
     ]
 
     for (const h of horarios) {
-        if (!h.dataInicio || !h.dataFim || !h.horarioInicio || !h.horarioFim) continue
+        if (!h.dataInicio || !h.horarioInicio || !h.horarioFim) continue
 
-        const byDay   = DIA_SEMANA_BYDAY[h.diaSemana]
-        if (!byDay) continue
-
-        // Primeira ocorrência real do dia da semana dentro do período
-        const firstDate = firstOccurrence(h.dataInicio, h.diaSemana)
-
-        const dtStart  = toICSDateTime(firstDate, h.horarioInicio)
-        const dtEnd    = toICSDateTime(firstDate, h.horarioFim)
-        const until    = toICSDate(h.dataFim) + 'T235959Z'
+        // Ocorrência que passa da meia-noite termina no dia seguinte
+        const dtStart = toICSDateTime(h.dataInicio, h.horarioInicio)
+        const dtEnd   = toICSDateTime(h.dataFim || h.dataInicio, h.horarioFim)
 
         const sala   = salas.find(s => s.id === h.salaId)
         const curso  = cursos.find(c => c.id === h.cursoId)
 
-        const summary  = escapeICS(h.disciplina || 'Aula')
+        const summary  = escapeICS(h.disciplina || 'Reserva')
         const location = escapeICS(sala?.nome || sala?.nomeSala || sala?.codigo_sala || '')
         const desc     = escapeICS([
             h.professor  ? `Professor: ${h.professor}`   : '',
             curso        ? `Curso: ${curso.nomeCurso || curso.nome} (${curso.siglaCurso || curso.sigla})` : '',
-            sala         ? `Sala: ${sala.nome || sala.nomeSala || sala.codigo_sala} — ${sala.tipo || sala.tipoSala}`     : '',
+            sala         ? `Sala: ${[sala.nome || sala.nomeSala || sala.codigo_sala, sala.tipo || sala.tipoSala].filter(Boolean).join(' — ')}` : '',
             h.semestre   ? `Semestre: ${h.semestre}`     : '',
-        ].filter(Boolean).join('\\n'))
+        ].filter(Boolean).join('\n'))
 
         lines.push('BEGIN:VEVENT')
-        lines.push(`UID:${generateUID(h)}`)
+        lines.push(`UID:${generateUID(h, dtStart)}`)
         lines.push(`DTSTAMP:${now}`)
-        lines.push(`DTSTART:${dtStart}`)
-        lines.push(`DTEND:${dtEnd}`)
-        lines.push(`RRULE:FREQ=WEEKLY;BYDAY=${byDay};UNTIL=${until}`)
+        lines.push(`DTSTART;TZID=${APP_TIMEZONE}:${dtStart}`)
+        lines.push(`DTEND;TZID=${APP_TIMEZONE}:${dtEnd}`)
         lines.push(foldLine(`SUMMARY:${summary}`))
         if (location) lines.push(foldLine(`LOCATION:${location}`))
         if (desc)     lines.push(foldLine(`DESCRIPTION:${desc}`))

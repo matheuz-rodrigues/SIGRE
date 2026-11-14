@@ -57,6 +57,9 @@ Segunda rodada (branch `fix/ajustes-seguranca-dspd`):
   O `csrf_token` virou HttpOnly: o front recebe o valor no corpo da resposta e nunca lê `document.cookie`.
   `COOKIE_SECURE` (padrão `true`, obrigatório em produção) só deve ser desligado em desenvolvimento num navegador
   que recuse cookies `Secure` em `http://localhost`; Chrome e Firefox aceitam.
+  O cookie `refresh_token` usa `REFRESH_COOKIE_PATH` (padrão `/auth`). Quando a API é publicada sob um prefixo,
+  como `/api` atrás do CloudFront, o valor deve ser `/api/auth`; senão o navegador não envia o cookie ao
+  `/api/auth/refresh` e a sessão cai no reload e a cada 15 minutos.
 
 ## Fluxo de autenticação
 
