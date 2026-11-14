@@ -131,5 +131,6 @@ def mock_google_calendar():
          patch("app.services.calendar.google_calendar.list_events", return_value=[]), \
          patch("app.services.calendar.google_calendar.create_event", return_value={"id": "mock_event_id"}), \
          patch("app.services.calendar.google_calendar.update_event", return_value={"id": "mock_event_id"}), \
-         patch("app.services.calendar.google_calendar.delete_event", return_value=True):
+         patch("app.services.calendar.google_calendar.delete_event", return_value=True), \
+         patch("app.services.calendar.google_calendar.get_event_by_id", return_value=None):
         yield

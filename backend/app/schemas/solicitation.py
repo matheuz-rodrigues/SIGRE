@@ -1,6 +1,6 @@
-from pydantic import BaseModel, Field, ConfigDict, computed_field, AliasChoices
+from pydantic import BaseModel, Field, ConfigDict, computed_field, AliasChoices, field_serializer
 from typing import Optional
-from datetime import date, time, datetime
+from datetime import date, time, datetime, timezone
 from app.schemas.room import RoomOut
 
 class SolicitationBase(BaseModel):
@@ -36,6 +36,13 @@ class SolicitationOut(SolicitationBase):
     sala: Optional[RoomOut] = None
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    @field_serializer("criadoEm")
+    def _criado_em_com_fuso(self, value: datetime) -> str:
+        # created_at vem do now() do banco, que roda em UTC, e é gravado sem fuso
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.isoformat()
 
     @computed_field
     @property

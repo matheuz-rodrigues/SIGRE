@@ -5,6 +5,7 @@ import api from '../../services/api'
 import { useSchedule } from '../Schedule/ScheduleContext'
 import { getDashboardMetrics } from '../../services/DashboardService'
 import { startGoogleCalendarConnect } from '../../services/GoogleServices'
+import { formatDateTimeBelem } from '../../utils/datetime'
 import {
     Plus, LayoutGrid, ClipboardList, Calendar, Database, Map,
     CheckCircle2, XCircle, Clock, Building2, User, Users,
@@ -151,7 +152,7 @@ const AdminPainel = () => {
                 observacoes: s.observacoes || '',
                 status: s.status,
                 motivoRecusa: s.motivoRecusa || '',
-                criadoEm: new Date(s.criadoEm).toLocaleString('pt-BR'),
+                criadoEm: formatDateTimeBelem(s.criadoEm),
             })))
         } catch (err) {
             console.error('Erro ao carregar solicitações:', err)
@@ -219,7 +220,11 @@ const AdminPainel = () => {
             carregarSolicitacoes();
             setConflito(null);
             setExpandedId(null);
-        } catch  { toast.error('Erro ao finalizar aprovação.'); }
+        } catch (err) {
+            // Ex.: 409 quando a sala já está reservada no horário
+            const detail = err.response?.data?.detail
+            toast.error(typeof detail === 'string' ? detail : 'Erro ao finalizar aprovação.')
+        }
         finally { setLoadingAprovar(null) }
     }
 

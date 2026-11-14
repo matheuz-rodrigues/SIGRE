@@ -28,6 +28,8 @@ class Alocacao(Base):
     recurrency = Column(String, nullable=True)
     status = Column(String(20), default="PENDING", nullable=False)
     google_event_id = Column(String(255), nullable=True)
+    # Usuário em cuja Agenda Google o evento foi criado (editar e excluir precisam da credencial dele)
+    google_owner_id = Column(Integer, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
 
     # Relacionamentos
     usuario = relationship("Usuario", foreign_keys=[fk_usuario])

@@ -36,6 +36,10 @@ class Settings(BaseSettings):
 	# cookies Secure em http://localhost (Chrome e Firefox aceitam).
 	COOKIE_SECURE: bool = True
 
+	# Path do cookie de refresh token: o caminho de /auth como o navegador o vê.
+	# Atrás de um proxy que publica a API em /api (ex.: CloudFront), usar /api/auth.
+	REFRESH_COOKIE_PATH: str = "/auth"
+
 	# Origens do front-end autorizadas (CORS e verificação de Origin no CSRF).
 	# Se vazio, usa FRONTEND_URL e FRONTEND_PUBLIC_URL.
 	CORS_ORIGINS: list[str] = []
