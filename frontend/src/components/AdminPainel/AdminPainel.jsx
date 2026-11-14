@@ -6,11 +6,12 @@ import { useSchedule } from '../Schedule/ScheduleContext'
 import { getDashboardMetrics } from '../../services/DashboardService'
 import { startGoogleCalendarConnect } from '../../services/GoogleServices'
 import { formatDateTimeBelem } from '../../utils/datetime'
+import useEscapeKey from '../../hooks/useEscapeKey'
 import {
     Plus, LayoutGrid, ClipboardList, Calendar, Database, Map,
     CheckCircle2, XCircle, Clock, Building2, User, Users,
     AlignLeft, ChevronDown, ChevronUp, GraduationCap, BookOpen,
-    Bell, Filter, Search, FileSpreadsheet, AlertTriangle, Settings, Link, ArrowRight
+    Bell, Filter, Search, FileSpreadsheet, AlertTriangle, Settings, Link, ArrowRight, RefreshCw
 } from 'lucide-react'
 
 // Componentes Internos
@@ -130,6 +131,11 @@ const AdminPainel = () => {
     const [modalConfirmDisconnect, setModalConfirmDisconnect] = useState(false)
     const [modalFeedback, setModalFeedback] = useState({ show: false, title: '', message: '', type: 'info' })
 
+    useEscapeKey(() => setConflito(null), !!conflito)
+    useEscapeKey(() => setModalConfirmDisconnect(false), modalConfirmDisconnect && !loadingGoogle)
+    useEscapeKey(() => setModalFeedback(prev => ({ ...prev, show: false })), modalFeedback.show)
+    useEscapeKey(() => { setShowForm(false); setHorarioEdit(null) }, showForm)
+
     const carregarSolicitacoes = async () => {
         setLoadingSols(true)
         try {
@@ -176,6 +182,11 @@ const AdminPainel = () => {
         checkGoogleStatus()
     }, [])
 
+    // Solicitações chegam a qualquer momento: recarrega sempre que o admin volta à aba
+    useEffect(() => {
+        if (activeTab === 'solicitacoes') carregarSolicitacoes()
+    }, [activeTab])
+
     useEffect(() => {
         getDashboardMetrics()
             .then(setMetrics)
@@ -184,15 +195,28 @@ const AdminPainel = () => {
 
     // ── Handlers de Usuários (Passados para UserManagement) ──
     const handleAprovarUsuario = async (id) => {
+        if (!(await confirmAction({
+            title: 'Aprovar usuário?',
+            description: 'O usuário poderá entrar no sistema.',
+            confirmLabel: 'Aprovar',
+            tone: 'positive',
+        }))) return
         try {
             await api.patch(`/users/approve/${id}`)
+            toast.success('Usuário aprovado.')
             carregarUsuarios()
         } catch { toast.error('Erro ao aprovar usuário.') }
     }
 
     const handleRecusarUsuario = async (id) => {
+        if (!(await confirmAction({
+            title: 'Recusar usuário?',
+            description: 'O usuário perde o acesso ao sistema.',
+            confirmLabel: 'Recusar',
+        }))) return
         try {
             await api.patch(`/users/refuse/${id}`)
+            toast.success('Usuário recusado.')
             carregarUsuarios()
         } catch  { toast.error('Erro ao processar alteração.') }
     }
@@ -201,12 +225,19 @@ const AdminPainel = () => {
         if (!(await confirmAction({ title: 'Excluir usuário?', description: 'O usuário será excluído permanentemente.' }))) return
         try {
             await api.delete(`/users/${id}`)
+            toast.success('Usuário excluído.')
             carregarUsuarios()
         } catch { toast.error('Erro ao excluir.') }
     }
 
     const handleCheckAprovar = async (solicitacao) => {
         if (loadingAprovar) return
+        if (!(await confirmAction({
+            title: 'Aprovar solicitação?',
+            description: `A sala será reservada para ${solicitacao.solicitante} (${solicitacao.diaSemana}, ${solicitacao.horario}).`,
+            confirmLabel: 'Aprovar',
+            tone: 'positive',
+        }))) return
         await handleFinalizarAprovacao(solicitacao.id);
     }
 
@@ -217,6 +248,7 @@ const AdminPainel = () => {
             await api.patch(`/solicitations/${id}/status`, {
                 status: 'aprovado'
             });
+            toast.success('Solicitação aprovada e sala reservada.')
             carregarSolicitacoes();
             setConflito(null);
             setExpandedId(null);
@@ -228,17 +260,28 @@ const AdminPainel = () => {
         finally { setLoadingAprovar(null) }
     }
 
-    const handleRecusarSolicitacao = async (id) => {
-        if (loadingRecusar === id) return
+    const handleRecusarSolicitacao = async (solicitacao) => {
+        const { id } = solicitacao
+        const motivo = (motivoRecusa[id] || '').trim()
+        if (loadingRecusar === id || !motivo) return
+        if (!(await confirmAction({
+            title: 'Recusar solicitação?',
+            description: `${solicitacao.solicitante} verá o motivo: "${motivo}"`,
+            confirmLabel: 'Recusar',
+        }))) return
         setLoadingRecusar(id)
         try {
             await api.patch(`/solicitations/${id}/status`, {
                 status: 'recusado',
-                motivoRecusa: motivoRecusa[id] || ''
+                motivoRecusa: motivo
             })
+            toast.success('Solicitação recusada.')
             carregarSolicitacoes()
             setExpandedId(null)
-        } catch  { toast.error('Erro ao recusar solicitação.') }
+        } catch (err) {
+            const detail = err.response?.data?.detail
+            toast.error(typeof detail === 'string' ? detail : 'Erro ao recusar solicitação.')
+        }
         finally { setLoadingRecusar(null) }
     }
 
@@ -392,7 +435,14 @@ const AdminPainel = () => {
                 {activeTab === 'solicitacoes' && (
                     <div className="animate-in fade-in duration-500">
                         <div className="flex justify-between items-end mb-6">
-                            <h3 className="text-xl font-black text-gray-900 italic uppercase">Solicitações de Espaço</h3>
+                            <div className="flex items-center gap-3">
+                                <h3 className="text-xl font-black text-gray-900 italic uppercase">Solicitações de Espaço</h3>
+                                <button onClick={carregarSolicitacoes} disabled={loadingSols}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-blue-900 bg-blue-50 border border-blue-100 hover:bg-blue-100 disabled:opacity-50 transition-all">
+                                    <RefreshCw size={13} className={loadingSols ? 'animate-spin' : ''} />
+                                    {loadingSols ? 'Atualizando...' : 'Atualizar'}
+                                </button>
+                            </div>
                             <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-xl">
                                 {['todos', 'pendente', 'aprovado', 'recusado'].map(s => (
                                     <button key={s} onClick={() => setFiltroStatus(s)}
@@ -538,8 +588,8 @@ const AdminPainel = () => {
                                                 {s.status === 'pendente' && (
                                                     <div className="flex gap-2">
                                                         <input value={motivoRecusa[s.id] || ''} onChange={e => setMotivoRecusa({ ...motivoRecusa, [s.id]: e.target.value })}
-                                                            placeholder="Motivo da recusa (opcional)" className="flex-1 px-4 text-sm rounded-xl border border-gray-200 outline-none focus:ring-2 focus:ring-blue-100" />
-                                                        <button onClick={() => handleRecusarSolicitacao(s.id)} disabled={loadingRecusar === s.id || loadingAprovar === s.id} className="px-5 py-2.5 bg-red-50 text-red-600 rounded-xl font-bold text-sm border border-red-100 disabled:opacity-50">{loadingRecusar === s.id ? 'Recusando...' : 'Recusar'}</button>
+                                                            placeholder="Motivo da recusa (obrigatório para recusar)" aria-label="Motivo da recusa" className="flex-1 px-4 text-sm rounded-xl border border-gray-200 outline-none focus:ring-2 focus:ring-blue-100" />
+                                                        <button onClick={() => handleRecusarSolicitacao(s)} disabled={!(motivoRecusa[s.id] || '').trim() || loadingRecusar === s.id || loadingAprovar === s.id} title={(motivoRecusa[s.id] || '').trim() ? undefined : 'Informe o motivo da recusa'} className="px-5 py-2.5 bg-red-50 text-red-600 rounded-xl font-bold text-sm border border-red-100 disabled:opacity-50">{loadingRecusar === s.id ? 'Recusando...' : 'Recusar'}</button>
                                                         <button onClick={() => handleCheckAprovar(s)} disabled={loadingAprovar === s.id || loadingRecusar === s.id} className="px-5 py-2.5 bg-green-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-green-100 disabled:opacity-50">{loadingAprovar === s.id ? 'Aprovando...' : 'Aprovar'}</button>
                                                     </div>
                                                 )}

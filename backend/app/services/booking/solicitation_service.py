@@ -60,9 +60,13 @@ class SolicitationService(BaseService[Solicitacao]):
                 db, solicitacao, {"status": "aprovado", "fk_alocacao": aloc_id}
             )
 
+        motivo = (payload.motivoRecusa or "").strip()
+        if status_new == "recusado" and not motivo:
+            raise HTTPException(status_code=422, detail="Informe o motivo da recusa.")
+
         update_data: dict = {"status": status_new}
-        if payload.motivoRecusa is not None:
-            update_data["motivo_recusa"] = payload.motivoRecusa
+        if motivo:
+            update_data["motivo_recusa"] = motivo
         if status_new == "recusado" and getattr(solicitacao, "fk_alocacao", None):
             allocation_service.reject_reservation(db, solicitacao.fk_alocacao, admin_user)
         return self.repository.update(db, solicitacao, update_data)

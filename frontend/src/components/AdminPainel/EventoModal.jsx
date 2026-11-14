@@ -4,6 +4,7 @@ import { X, CalendarDays, Check, Building2, Tag, AlignLeft } from 'lucide-react'
 import { useSchedule } from '../Schedule/ScheduleContext'
 import api from '../../services/api'
 import { getUser } from '../../services/sessionStore'
+import useEscapeKey from '../../hooks/useEscapeKey'
 
 const inp = "w-full px-4 py-3 border border-gray-200 rounded-xl bg-white text-gray-800 focus:ring-2 focus:ring-purple-400 focus:outline-none focus:border-purple-400 transition-all text-sm placeholder-gray-400"
 const lbl = "block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2"
@@ -37,6 +38,8 @@ const EventoModal = ({ onClose, onSaved }) => {
     })
     const [errors, setErrors] = useState({})
     const [isSaving, setIsSaving] = useState(false)
+
+    useEscapeKey(onClose, !isSaving)
 
     const set = (k, v) => {
         setForm(f => ({ ...f, [k]: v }))

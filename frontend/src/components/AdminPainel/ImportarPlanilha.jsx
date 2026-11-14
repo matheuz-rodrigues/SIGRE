@@ -2,6 +2,7 @@ import { toast } from 'sonner'
 import { useState } from 'react'
 import * as XLSX from 'xlsx'
 import api from '../../services/api'
+import useEscapeKey from '../../hooks/useEscapeKey'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import {
@@ -75,6 +76,9 @@ const ImportarPlanilha = ({ onClose, onImportado }) => {
     // Novos estados para controle de exportação
     const [exportando, setExportando] = useState(null)
     const [formatoDownload, setFormatoDownload] = useState('excel') // 'excel' | 'pdf'
+
+    // Não fecha no meio de uma importação
+    useEscapeKey(onClose, etapa !== 'importando')
 
     
 

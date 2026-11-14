@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { X, Check, Plus } from 'lucide-react'
 import { CONFIG } from '../_config/DataManagerConfig'
+import useEscapeKey from '../../../hooks/useEscapeKey'
 
 const inp = "w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-white text-gray-800 focus:ring-2 focus:ring-indigo-400 focus:outline-none focus:border-indigo-400 transition-all text-sm"
 const lbl = "block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1.5"
@@ -37,6 +38,8 @@ const ItemModal = ({ tipo, item, lists, onSave, onClose, onAddSubItem }) => {
     
     // Estado para criação inline
     const [inlineAdd, setInlineAdd] = useState({ field: null, values: { nome: '', sigla: '' } })
+
+    useEscapeKey(onClose)
 
     const set = (k, v) => {
         setData(d => ({ ...d, [k]: v }))
@@ -170,7 +173,11 @@ const ItemModal = ({ tipo, item, lists, onSave, onClose, onAddSubItem }) => {
                                                             e.preventDefault()
                                                             if (field.listName !== 'cursos') handleInlineSave(field)
                                                         }
-                                                        if (e.key === 'Escape') setInlineAdd({ field: null, values: { nome: '', sigla: '' } })
+                                                        if (e.key === 'Escape') {
+                                                            // Esc aqui só cancela a criação inline, não fecha o modal
+                                                            e.preventDefault()
+                                                            setInlineAdd({ field: null, values: { nome: '', sigla: '' } })
+                                                        }
                                                     }}
                                                 />
                                                 {field.listName === 'cursos' && (
@@ -184,7 +191,10 @@ const ItemModal = ({ tipo, item, lists, onSave, onClose, onAddSubItem }) => {
                                                                 e.preventDefault()
                                                                 handleInlineSave(field)
                                                             }
-                                                            if (e.key === 'Escape') setInlineAdd({ field: null, values: { nome: '', sigla: '' } })
+                                                            if (e.key === 'Escape') {
+                                                                e.preventDefault()
+                                                                setInlineAdd({ field: null, values: { nome: '', sigla: '' } })
+                                                            }
                                                         }}
                                                     />
                                                 )}

@@ -1,5 +1,6 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useSchedule } from '../Schedule/ScheduleContext'
+import useEscapeKey from '../../hooks/useEscapeKey'
 import { generateICS, downloadICS } from '../../utils/exportICS'
 import {
     X, Download, Calendar, Building2,
@@ -251,11 +252,7 @@ const ExportICSModal = ({ onClose }) => {
 
 // Wrapper do overlay
 const Overlay = ({ children, onClose }) => {
-    useEffect(() => {
-        const onKey = (e) => { if (e.key === 'Escape') onClose() }
-        window.addEventListener('keydown', onKey)
-        return () => window.removeEventListener('keydown', onKey)
-    }, [onClose])
+    useEscapeKey(onClose)
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
